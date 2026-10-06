@@ -74,6 +74,13 @@ class PhoneAuthenticationTests(TestCase):
         self.assertEqual(registration.json()["user"]["phone"], "+77001234567")
         self.assertEqual(Account.objects.get(email="test@example.com").phone, "+77001234567")
 
+        duplicate_email = self.post_auth({
+            "action": "register", "name": "Other User", "email": "test@example.com",
+            "phone": "+77001234568", "password": "secure-password-123",
+        })
+        self.assertEqual(duplicate_email.status_code, 409)
+        self.assertEqual(duplicate_email.json()["error"], "Бұл email бұрын тіркелген")
+
         duplicate = self.post_auth({
             "action": "register", "name": "Other User", "email": "other@example.com",
             "phone": "+77001234567", "password": "secure-password-123",
