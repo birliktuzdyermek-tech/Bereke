@@ -1,0 +1,183 @@
+import json
+from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
+
+from django.core import mail
+from django.core.cache import cache
+from django.test import TestCase
+from django.test import Client
+from django.test.utils import override_settings
+from django.utils import timezone
+
+from .models import Account, Budget, Card, Transaction
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class PhoneAuthenticationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def post_auth(self, body):
+        return self.client.post("/api/auth", data=json.dumps(body), content_type="application/json")
+
+    def test_register_and_sign_in_by_phone_or_email(self):
+        registration = self.post_auth({
+            "action": "register", "name": "Test User", "email": "test@example.com",
+            "phone": "8 (700) 123-45-67", "password": "secure-password-123",
+        })
+        self.assertEqual(registration.status_code, 201)
+        self.assertEqual(registration.json()["user"]["phone"], "+77001234567")
+        self.assertEqual(Account.objects.get(email="test@example.com").phone, "+77001234567")
+
+        duplicate = self.post_auth({
+            "action": "register", "name": "Other User", "email": "other@example.com",
+            "phone": "+77001234567", "password": "secure-password-123",
+        })
+        self.assertEqual(duplicate.status_code, 409)
+
+        self.client.delete("/api/auth")
+        phone_login = self.post_auth({"action": "login", "identifier": "+7 700 123 45 67", "password": "secure-password-123"})
+        self.assertEqual(phone_login.status_code, 200)
+        self.client.delete("/api/auth")
+        email_login = self.post_auth({"action": "login", "identifier": "test@example.com", "password": "secure-password-123"})
+        self.assertEqual(email_login.status_code, 200)
+
+    def test_registration_rejects_invalid_phone(self):
+        response = self.post_auth({
+            "action": "register", "name": "Test User", "email": "test@example.com",
+            "phone": "123", "password": "secure-password-123",
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Account.objects.exists())
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class AccountRecoveryTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client.post("/api/auth", data=json.dumps({
+            "action": "register", "name": "Test User", "email": "recover@example.com",
+            "phone": "+77001234567", "password": "original-password-123",
+        }), content_type="application/json")
+
+    def token_from_last_email(self):
+        link = next(line for line in mail.outbox[-1].body.splitlines() if line.startswith("http"))
+        return parse_qs(urlparse(link).query)["token"][0]
+
+    def test_email_verification_and_resend(self):
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(Account.objects.get(email="recover@example.com").email_verified_at)
+        response = self.client.post("/api/email-verification", data="{}", content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 2)
+        token = self.token_from_last_email()
+        confirmed = self.client.post("/api/email-verification", data=json.dumps({"token": token}), content_type="application/json")
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertTrue(confirmed.json()["user"]["emailVerified"])
+        self.assertTrue(Account.objects.get(email="recover@example.com").email_verified_at)
+
+    def test_password_reset_invalidates_old_password_and_session(self):
+        unknown = self.client.post("/api/password-reset", data=json.dumps({"email": "unknown@example.com"}), content_type="application/json")
+        self.assertEqual(unknown.json(), {"ok": True})
+        self.assertEqual(len(mail.outbox), 1)
+        response = self.client.post("/api/password-reset", data=json.dumps({"email": "recover@example.com"}), content_type="application/json")
+        self.assertEqual(response.json(), {"ok": True})
+        token = self.token_from_last_email()
+        self.assertTrue(self.client.get("/api/password-reset/confirm", {"token": token}).json()["valid"])
+        changed = self.client.post("/api/password-reset/confirm", data=json.dumps({"token": token, "password": "replacement-password-456"}), content_type="application/json")
+        self.assertEqual(changed.status_code, 200)
+        self.assertIsNone(self.client.get("/api/auth").json()["user"])
+        self.assertFalse(self.client.get("/api/password-reset/confirm", {"token": token}).json()["valid"])
+        old_login = self.client.post("/api/auth", data=json.dumps({"action": "login", "identifier": "recover@example.com", "password": "original-password-123"}), content_type="application/json")
+        self.assertEqual(old_login.status_code, 401)
+        new_login = self.client.post("/api/auth", data=json.dumps({"action": "login", "identifier": "recover@example.com", "password": "replacement-password-456"}), content_type="application/json")
+        self.assertEqual(new_login.status_code, 200)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class BudgetTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.other = Client()
+        for client, email, phone in ((self.client, "first@example.com", "+77001234567"),
+                                     (self.other, "second@example.com", "+77001234568")):
+            response = client.post("/api/auth", data=json.dumps({
+                "action": "register", "name": "Test User", "email": email,
+                "phone": phone, "password": "secure-password-123",
+            }), content_type="application/json")
+            self.assertEqual(response.status_code, 201)
+
+    def post_budget(self, client, category, limit):
+        return client.post("/api/budgets", data=json.dumps({"category": category, "monthlyLimit": limit}),
+                           content_type="application/json")
+
+    def test_current_month_spending_and_ownership(self):
+        created = self.post_budget(self.client, "Азық-түлік", 30000)
+        self.assertEqual(created.status_code, 201)
+        budget_id = created.json()["item"]["id"]
+        user = Account.objects.get(email="first@example.com")
+        other = Account.objects.get(email="second@example.com")
+        today = timezone.localdate()
+        previous_month = today.replace(day=1) - timedelta(days=1)
+        for owner, amount, kind, day in ((user, 12000, "expense", today),
+                                         (user, 8000, "expense", today),
+                                         (user, 9000, "income", today),
+                                         (user, 4000, "expense", previous_month),
+                                         (other, 3000, "expense", today)):
+            Transaction.objects.create(user=owner, merchant="Example", category="Азық-түлік",
+                                       amount=amount, type=kind, tx_date=day, created_at=timezone.now())
+        data = self.client.get("/api/finance").json()
+        self.assertEqual(data["budgets"][0]["spent"], 20000)
+        self.assertEqual(self.other.get("/api/budgets").json()["budgets"], [])
+        self.assertEqual(self.other.delete(f"/api/budgets?id={budget_id}").status_code, 404)
+        updated = self.post_budget(self.client, "Азық-түлік", 25000)
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(Budget.objects.filter(user=user).count(), 1)
+        self.assertEqual(self.client.get("/api/budgets").json()["budgets"][0]["monthlyLimit"], 25000)
+        self.assertEqual(self.client.delete(f"/api/budgets?id={budget_id}").status_code, 200)
+        self.assertFalse(Budget.objects.filter(user=user).exists())
+
+    def test_limit_validation(self):
+        for limit in (0, -1, 1.5, "many", 1_000_000_001):
+            self.assertEqual(self.post_budget(self.client, "Көлік", limit).status_code, 400)
+        self.assertEqual(self.post_budget(self.client, "", 1000).status_code, 400)
+        self.assertFalse(Budget.objects.exists())
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class TransactionEditingTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.other_client = Client()
+        for email, phone, client in (("first@example.com", "+77001234567", self.client),
+                                     ("second@example.com", "+77001234568", self.other_client)):
+            client.post("/api/auth", data=json.dumps({"action": "register", "name": "Test User",
+                "email": email, "phone": phone, "password": "secure-password-123"}), content_type="application/json")
+        self.user = Account.objects.get(email="first@example.com")
+        self.item = Transaction.objects.create(user=self.user, merchant="Old", category="Азық-түлік",
+            amount=1000, type="expense", tx_date=timezone.localdate(), created_at=timezone.now())
+        Budget.objects.create(user=self.user, category="Азық-түлік", monthly_limit=5000)
+        Budget.objects.create(user=self.user, category="Көлік", monthly_limit=5000)
+
+    def patch_item(self, client, **changes):
+        body = {"kind": "transaction", "id": self.item.id, "merchant": "Taxi", "category": "Көлік",
+                "amount": 2200, "type": "expense", "txDate": timezone.localdate().isoformat(), "cardId": None}
+        body.update(changes)
+        return client.patch("/api/finance", data=json.dumps(body), content_type="application/json")
+
+    def test_edit_updates_budget_totals(self):
+        card = Card.objects.create(user=self.user, bank_name="Test", last4="1234", created_at=timezone.now())
+        response = self.patch_item(self.client, cardId=card.id)
+        self.assertEqual(response.status_code, 200)
+        self.item.refresh_from_db()
+        self.assertEqual((self.item.merchant, self.item.category, self.item.amount, self.item.card_id), ("Taxi", "Көлік", 2200, card.id))
+        budgets = {item["category"]: item["spent"] for item in self.client.get("/api/finance").json()["budgets"]}
+        self.assertEqual(budgets, {"Азық-түлік": 0, "Көлік": 2200})
+
+    def test_edit_rejects_other_users_and_invalid_fields(self):
+        self.assertEqual(self.patch_item(self.other_client).status_code, 404)
+        self.assertEqual(self.patch_item(self.client, amount=-1).status_code, 400)
+        self.assertEqual(self.patch_item(self.client, txDate="2026-02-30").status_code, 400)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.amount, 1000)
+        self.assertEqual(self.item.category, "Азық-түлік")

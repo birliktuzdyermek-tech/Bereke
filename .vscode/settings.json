@@ -1,0 +1,6 @@
+{
+  "workbench.editorAssociations": {
+    "*.sqlite": "sqlite-viewer.view",
+    "*.sqlite3": "sqlite-viewer.view"
+  }
+}
