@@ -1,5 +1,6 @@
 from django.urls import path
 from django.http import JsonResponse
+from django.contrib import admin
 from finance import views
 
 
@@ -12,6 +13,7 @@ def api_index(request):
 
 
 urlpatterns = [
+    path("admin/", admin.site.urls),
     path("", api_index),
     path("api/auth", views.auth_view),
     path("api/password-reset", views.password_reset_view),

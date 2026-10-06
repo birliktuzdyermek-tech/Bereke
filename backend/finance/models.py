@@ -13,6 +13,9 @@ class Account(models.Model):
     class Meta:
         db_table = "users"
 
+    def __str__(self):
+        return f"{self.name} ({self.email})"
+
 
 class LoginSession(models.Model):
     token_hash = models.CharField(max_length=64, primary_key=True)
@@ -32,6 +35,9 @@ class Card(models.Model):
     class Meta:
         db_table = "cards"
 
+    def __str__(self):
+        return f"{self.bank_name} •••• {self.last4}"
+
 
 class Transaction(models.Model):
     user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE)
@@ -46,6 +52,9 @@ class Transaction(models.Model):
     class Meta:
         db_table = "transactions"
 
+    def __str__(self):
+        return f"{self.merchant} — {self.amount} ₸"
+
 
 class Subscription(models.Model):
     user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE)
@@ -58,6 +67,9 @@ class Subscription(models.Model):
     class Meta:
         db_table = "subscriptions"
 
+    def __str__(self):
+        return self.merchant
+
 
 class Budget(models.Model):
     user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE)
@@ -68,3 +80,6 @@ class Budget(models.Model):
     class Meta:
         db_table = "budgets"
         constraints = [models.UniqueConstraint(fields=["user", "category"], name="unique_budget_user_category")]
+
+    def __str__(self):
+        return f"{self.category} — {self.monthly_limit} ₸"

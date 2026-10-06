@@ -4,12 +4,57 @@ from urllib.parse import parse_qs, urlparse
 
 from django.core import mail
 from django.core.cache import cache
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.test import Client
 from django.test.utils import override_settings
 from django.utils import timezone
 
 from .models import Account, Budget, Card, Transaction
+
+
+class AdminTests(TestCase):
+    def setUp(self):
+        self.account = Account.objects.create(
+            id="admin-test-account", name="Bereke User", email="user@example.com",
+            phone="+77001234567", password_hash="private-test-hash",
+            created_at=timezone.now(),
+        )
+
+    def test_admin_requires_staff_login_and_shows_finance_models(self):
+        response = self.client.get("/admin/")
+        self.assertRedirects(response, "/admin/login/?next=/admin/")
+
+        administrator = get_user_model().objects.create_superuser(
+            username="site-admin", email="admin@example.com", password="test-password-123"
+        )
+        self.client.force_login(administrator)
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 200)
+        for label in ("Accounts", "Cards", "Transactions", "Subscriptions", "Budgets"):
+            self.assertContains(response, label)
+
+        change_response = self.client.get(f"/admin/finance/account/{self.account.pk}/change/")
+        self.assertEqual(change_response.status_code, 200)
+        self.assertNotContains(change_response, "private-test-hash")
+
+    def test_admin_can_add_finance_record(self):
+        administrator = get_user_model().objects.create_superuser(
+            username="site-admin", email="admin@example.com", password="test-password-123"
+        )
+        self.client.force_login(administrator)
+        response = self.client.post("/admin/finance/transaction/add/", {
+            "user": self.account.pk,
+            "card": "",
+            "merchant": "Test shop",
+            "category": "Shopping",
+            "amount": "2500",
+            "type": "expense",
+            "tx_date": timezone.localdate().isoformat(),
+            "_save": "Save",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Transaction.objects.filter(user=self.account, merchant="Test shop", amount=2500).exists())
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
