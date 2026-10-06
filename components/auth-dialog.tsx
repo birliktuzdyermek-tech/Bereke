@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/api-fetch";
+import { passwordProblem as checkPassword } from "@/lib/password-validation";
 
 export type AuthMode = "login" | "register";
 
@@ -30,9 +31,7 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
   const emailProblem = !emailValue ? "Email мекенжайы бос болмауы керек."
     : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue) ? "Email мекенжайын дұрыс енгізіңіз."
     : emailServerError;
-  const passwordProblem = !password ? "Құпиясөз бос болмауы керек."
-    : password.length < 8 ? "Құпиясөз қабылданбайды: кемінде 8 таңба қажет."
-    : "";
+  const passwordProblem = checkPassword(password);
 
   const switchMode = (next: AuthMode) => {
     setError(""); setResetMode(false); setResetSent(false);
@@ -109,8 +108,8 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
             </label>
             <label>Телефон нөмірі<input type="tel" inputMode="tel" autoComplete="tel" required maxLength={24} value={phone} onChange={event => { setPhone(event.target.value); setError(""); }} placeholder="+77001234567" /></label>
           </> : <label>Email немесе телефон<input type="text" autoComplete="username" required maxLength={254} value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="name@example.com / +77001234567" /></label>}
-          <label>Құпиясөз<input type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={password} onBlur={() => setPasswordTouched(true)} onChange={event => setPassword(event.target.value)} aria-invalid={mode === "register" && (passwordTouched || submitted) && !!passwordProblem} aria-describedby={mode === "register" ? "register-password-status" : undefined} placeholder={mode === "register" ? "Кемінде 8 таңба" : "Құпиясөз"} />
-            {mode === "register" && (passwordTouched || submitted) && <span id="register-password-status" className={`auth-field-message ${passwordProblem ? "invalid" : "valid"}`} role="status">{passwordProblem || "Құпиясөз қабылданады."}</span>}
+          <label>Құпиясөз<input type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={password} onBlur={() => setPasswordTouched(true)} onChange={event => setPassword(event.target.value)} aria-invalid={mode === "register" && (passwordTouched || submitted || !!password) && !!passwordProblem} aria-describedby={mode === "register" ? "register-password-status" : undefined} placeholder={mode === "register" ? "Кемінде 8 таңба" : "Құпиясөз"} />
+            {mode === "register" && <span id="register-password-status" className={`auth-field-message ${!(passwordTouched || submitted || password) ? "hint" : passwordProblem ? "invalid" : "valid"}`} role="status">{passwordTouched || submitted || password ? passwordProblem || "Құпиясөз қабылданады." : "Кемінде 8 таңба, әріп, сан және арнайы таңба (!, ?, #) қажет."}</span>}
           </label>
           {mode === "login" && <button className="auth-link-button" type="button" onClick={() => { setResetEmail(identifier.includes("@") ? identifier : ""); setResetMode(true); setError(""); }}>Құпиясөзді ұмыттыңыз ба?</button>}
           {error && <p className="auth-error" role="alert">{error}</p>}

@@ -111,6 +111,18 @@ def normalize_phone(value):
     return phone if re.fullmatch(r"\+[1-9]\d{7,14}", phone) else None
 
 
+def password_problem(password):
+    if len(password) < 8:
+        return "Құпиясөз қабылданбайды: кемінде 8 таңба қажет."
+    if not any(char.isalpha() for char in password):
+        return "Құпиясөз тым оңай: әріп қосыңыз."
+    if not any(char in "0123456789" for char in password):
+        return "Құпиясөз тым оңай: сан қосыңыз."
+    if not any(not char.isalnum() and not char.isspace() for char in password):
+        return "Құпиясөз тым оңай: арнайы таңба қосыңыз."
+    return None
+
+
 def check_legacy_password(password, stored):
     try:
         algorithm, iterations, salt, digest = stored.split(":")
@@ -162,8 +174,10 @@ def auth_view(request):
         phone = normalize_phone(phone_value)
         if not phone:
             return fail("Телефон нөмірін халықаралық пішімде енгізіңіз, мысалы +77001234567")
-        if len(email) > 254 or not 2 <= len(name) <= 80 or len(password) < 8:
-            return fail("Атыңызды және кемінде 8 таңбалы құпиясөзді енгізіңіз")
+        if len(email) > 254 or not 2 <= len(name) <= 80:
+            return fail("Атыңызды дұрыс енгізіңіз")
+        if problem := password_problem(password):
+            return fail(problem)
         if Account.objects.filter(email__iexact=email).exists():
             return fail("Бұл email бұрын тіркелген", 409)
         if Account.objects.filter(phone=phone).exists():
@@ -224,8 +238,10 @@ def password_reset_confirm_view(request):
     if request.method == "GET":
         return JsonResponse({"valid": bool(reset_user_from_token(token))})
     password = body.get("password") if body else None
-    if not isinstance(password, str) or not 8 <= len(password) <= 128:
+    if not isinstance(password, str) or len(password) > 128:
         return fail("Құпиясөз 8–128 таңбадан тұруы керек")
+    if problem := password_problem(password):
+        return fail(problem)
     with transaction.atomic():
         user = reset_user_from_token(token)
         if not user:

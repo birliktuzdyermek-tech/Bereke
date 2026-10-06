@@ -102,6 +102,16 @@ class PhoneAuthenticationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Account.objects.exists())
 
+    def test_registration_rejects_simple_passwords(self):
+        for password in ("short1!", "12345678!", "password!", "password123"):
+            response = self.post_auth({
+                "action": "register", "name": "Test User", "email": "test@example.com",
+                "phone": "+77001234567", "password": password,
+            })
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("Құпиясөз", response.json()["error"])
+        self.assertFalse(Account.objects.exists())
+
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AccountRecoveryTests(TestCase):
@@ -135,6 +145,9 @@ class AccountRecoveryTests(TestCase):
         response = self.client.post("/api/password-reset", data=json.dumps({"email": "recover@example.com"}), content_type="application/json")
         self.assertEqual(response.json(), {"ok": True})
         token = self.token_from_last_email()
+        self.assertTrue(self.client.get("/api/password-reset/confirm", {"token": token}).json()["valid"])
+        weak = self.client.post("/api/password-reset/confirm", data=json.dumps({"token": token, "password": "password123"}), content_type="application/json")
+        self.assertEqual(weak.status_code, 400)
         self.assertTrue(self.client.get("/api/password-reset/confirm", {"token": token}).json()["valid"])
         changed = self.client.post("/api/password-reset/confirm", data=json.dumps({"token": token, "password": "replacement-password-456"}), content_type="application/json")
         self.assertEqual(changed.status_code, 200)
