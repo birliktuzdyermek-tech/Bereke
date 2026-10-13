@@ -7,7 +7,7 @@ from finance import views
 def api_index(request):
     return JsonResponse({
         "status": "ok",
-        "message": "Bereke Django API жұмыс істеп тұр",
+        "message": "Теңгерім Django API жұмыс істеп тұр",
         "endpoints": ["/api/auth", "/api/profile", "/api/finance", "/api/budgets"],
     })
 

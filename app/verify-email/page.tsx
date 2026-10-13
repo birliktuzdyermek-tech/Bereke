@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 import { PreferencesControls } from "@/components/preferences-provider";
 import { apiFetch } from "@/lib/api-fetch";
 
@@ -25,7 +26,7 @@ export default function VerifyEmailPage() {
     finally { setBusy(false); }
   };
 
-  return <main className="account-flow"><header className="account-flow-header"><Link className="about-logo" href="/"><span className="brand-mark">Б</span>береке.</Link><PreferencesControls /></header><section className="account-flow-card">
+  return <main className="account-flow"><header className="account-flow-header"><Link className="about-logo" href="/"><BrandLogo /></Link><PreferencesControls /></header><section className="account-flow-card">
     <h1>Email мекенжайын растау</h1>
     {done ? <p className="auth-success" role="status">Email мекенжайы расталды.</p> : <><p>Тіркелгіңіздегі email мекенжайын растаңыз.</p>{error && <p className="auth-error" role="alert">{error}</p>}<button className="primary-button auth-submit" type="button" disabled={busy} onClick={verify}>{busy ? "Күтіңіз…" : "Email растау"}</button></>}
     <Link href="/">Басты бетке оралу</Link>

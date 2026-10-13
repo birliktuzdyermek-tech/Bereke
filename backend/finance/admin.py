@@ -6,8 +6,8 @@ from django.utils import timezone
 from .models import Account, Budget, Card, Subscription, Transaction
 
 
-admin.site.site_header = "Береке әкімшілігі"
-admin.site.site_title = "Береке әкімшілігі"
+admin.site.site_header = "Теңгерім әкімшілігі"
+admin.site.site_title = "Теңгерім әкімшілігі"
 admin.site.index_title = "Сайт әкімшілігі"
 admin.site.site_url = settings.FRONTEND_URL
 

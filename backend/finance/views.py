@@ -71,13 +71,13 @@ def send_account_email(user, purpose):
     if purpose == "verify":
         token = signing.dumps({"uid": user.pk, "email": user.email}, salt="bereke-email-verification")
         link = f"{settings.FRONTEND_URL}/verify-email?token={quote(token, safe='')}"
-        subject = "Береке: email мекенжайыңызды растаңыз"
+        subject = "Теңгерім: email мекенжайыңызды растаңыз"
         message = f"Email мекенжайыңызды растау үшін сілтемені ашыңыз (24 сағат жарамды):\n{link}\n"
     else:
         fingerprint = hashlib.sha256(user.password_hash.encode()).hexdigest()
         token = signing.dumps({"uid": user.pk, "fingerprint": fingerprint}, salt="bereke-password-reset")
         link = f"{settings.FRONTEND_URL}/reset-password?token={quote(token, safe='')}"
-        subject = "Береке: құпиясөзді қалпына келтіру"
+        subject = "Теңгерім: құпиясөзді қалпына келтіру"
         message = f"Құпиясөзді өзгерту үшін сілтемені ашыңыз (30 минут жарамды):\n{link}\nЕгер бұл сұрауды өзіңіз жібермесеңіз, хатты елемеңіз.\n"
     try:
         send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)

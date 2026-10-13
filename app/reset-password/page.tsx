@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 import { PreferencesControls } from "@/components/preferences-provider";
 import { apiFetch } from "@/lib/api-fetch";
 import { passwordProblem } from "@/lib/password-validation";
@@ -44,7 +45,7 @@ export default function ResetPasswordPage() {
     finally { setBusy(false); }
   };
 
-  return <main className="account-flow"><header className="account-flow-header"><Link className="about-logo" href="/"><span className="brand-mark">Б</span>береке.</Link><PreferencesControls /></header><section className="account-flow-card">
+  return <main className="account-flow"><header className="account-flow-header"><Link className="about-logo" href="/"><BrandLogo /></Link><PreferencesControls /></header><section className="account-flow-card">
     <h1>Құпиясөзді қалпына келтіру</h1>
     {done ? <><p className="auth-success" role="status">Құпиясөз өзгертілді. Енді жаңа құпиясөзбен кіріңіз.</p><Link className="primary-button" href="/">Басты бетке оралу</Link></> : valid === null ? <p>Сілтеме тексерілуде…</p> : !valid ? <><p className="auth-error" role="alert">Сілтеме жарамсыз немесе мерзімі өтті</p><Link href="/">Басты бетке оралу</Link></> : <form className="auth-form" onSubmit={submit}>
       <label>Жаңа құпиясөз<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onBlur={() => setPasswordTouched(true)} onChange={event => { setPassword(event.target.value); setError(""); }} aria-invalid={(passwordTouched || !!password) && !!passwordIssue} aria-describedby="reset-password-status" />

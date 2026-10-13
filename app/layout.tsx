@@ -3,7 +3,7 @@ import "./globals.css";
 import { PreferencesProvider } from "@/components/preferences-provider";
 
 export const metadata: Metadata = {
-  title: "Береке — жеке қаржыңыз бір жерде",
+  title: "Теңгерім — жеке қаржыңыз бір жерде",
   description: "Кіріс пен шығысты талдап, жазылымдарды бақылаңыз және үнемдеу жолдарын табыңыз.",
   icons: {
     icon: "/favicon.svg",

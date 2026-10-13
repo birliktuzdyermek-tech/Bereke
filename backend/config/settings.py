@@ -77,7 +77,7 @@ EMAIL_BACKEND = os.environ.get(
     "django.core.mail.backends.filebased.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
 EMAIL_FILE_PATH = BASE_DIR / "data" / "mail"
-DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_FROM_EMAIL", "Bereke <no-reply@bereke.local>")
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_FROM_EMAIL", "Теңгерім <no-reply@tengerim.local>")
 EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "localhost")
 EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_USER", "")
