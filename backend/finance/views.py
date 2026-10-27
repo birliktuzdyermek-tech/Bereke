@@ -23,10 +23,11 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils import timezone as django_timezone
 
-from .models import Account, Budget, Card, LoginSession, Subscription, Transaction
+from .models import Account, Budget, Card, EmailChallenge, LoginSession, Subscription, Transaction
 
 SESSION_COOKIE = "bereke_session"
 SESSION_AGE = 30 * 24 * 60 * 60
+CODE_AGE = 10 * 60
 logger = logging.getLogger(__name__)
 
 
@@ -135,6 +136,87 @@ def check_legacy_password(password, stored):
         return False
 
 
+def code_digest(challenge_id, code):
+    return hmac.new(settings.SECRET_KEY.encode(), f"{challenge_id}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def authenticated_response(user, status=200):
+    token = secrets.token_urlsafe(32)
+    LoginSession.objects.create(token_hash=hashlib.sha256(token.encode()).hexdigest(), user=user,
+                                expires_at=int(time.time() * 1000) + SESSION_AGE * 1000)
+    response = JsonResponse({"user": public_user(user)}, status=status)
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_AGE, httponly=True,
+                        secure=not settings.DEBUG, samesite="Lax", path="/")
+    return response
+
+
+def verify_code(body):
+    challenge_id = body.get("challengeId")
+    code = body.get("code")
+    if not isinstance(challenge_id, str) or not isinstance(code, str) or not re.fullmatch(r"\d{6}", code):
+        return fail("Алты таңбалы кодты енгізіңіз")
+    try:
+        challenge_uuid = uuid.UUID(challenge_id)
+    except ValueError:
+        return fail("Код жарамсыз немесе мерзімі өтті", 400)
+    with transaction.atomic():
+        challenge = EmailChallenge.objects.select_for_update().filter(pk=challenge_uuid).first()
+        if not challenge or challenge.expires_at <= django_timezone.now() or challenge.attempts >= 5:
+            return fail("Код жарамсыз немесе мерзімі өтті", 400)
+        challenge.attempts += 1
+        challenge.save(update_fields=["attempts"])
+        if not hmac.compare_digest(challenge.code_hash, code_digest(challenge.id, code)):
+            return fail("Код қате. Қайта тексеріңіз.", 400)
+        if challenge.purpose == "register":
+            if Account.objects.filter(email__iexact=challenge.email).exists() or Account.objects.filter(phone=challenge.pending_phone).exists():
+                return fail("Email немесе телефон бұрын тіркелген", 409)
+            try:
+                user = Account.objects.create(id=str(uuid.uuid4()), name=challenge.pending_name,
+                    email=challenge.email, phone=challenge.pending_phone,
+                    password_hash=challenge.pending_password_hash, created_at=django_timezone.now(),
+                    email_verified_at=django_timezone.now())
+            except IntegrityError:
+                return fail("Email немесе телефон бұрын тіркелген", 409)
+            status = 201
+        else:
+            user = challenge.user
+            if not user or not hmac.compare_digest(challenge.password_fingerprint, hashlib.sha256(user.password_hash.encode()).hexdigest()):
+                return fail("Код жарамсыз немесе мерзімі өтті", 400)
+            if not user.email_verified_at:
+                user.email_verified_at = django_timezone.now()
+                user.save(update_fields=["email_verified_at"])
+            status = 200
+        EmailChallenge.objects.filter(email__iexact=challenge.email, purpose=challenge.purpose).delete()
+        return authenticated_response(user, status)
+
+
+def send_login_code(*, purpose, email, user=None, name="", phone="", password_hash=""):
+    recent = EmailChallenge.objects.filter(email__iexact=email, purpose=purpose,
+        created_at__gte=django_timezone.now() - timedelta(seconds=60)).exists()
+    if recent:
+        return fail("Код жіберілді. Қайта сұрау үшін 1 минут күтіңіз.", 429)
+    EmailChallenge.objects.filter(email__iexact=email, purpose=purpose).delete()
+    EmailChallenge.objects.filter(expires_at__lte=django_timezone.now()).delete()
+    challenge = EmailChallenge.objects.create(purpose=purpose, email=email, code_hash="",
+        user=user, pending_name=name, pending_phone=phone, pending_password_hash=password_hash,
+        password_fingerprint=hashlib.sha256(user.password_hash.encode()).hexdigest() if user else "",
+        expires_at=django_timezone.now() + timedelta(seconds=CODE_AGE))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    challenge.code_hash = code_digest(challenge.id, code)
+    challenge.save(update_fields=["code_hash"])
+    try:
+        sent = send_mail("Теңгерім: кіру коды", f"Бір реттік растау коды: {code}\nКод 10 минут жарамды. Егер мұны сіз сұрамаған болсаңыз, хатты елемеңіз.\n",
+            settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
+        if sent != 1:
+            raise RuntimeError("Mail backend did not accept the message")
+    except Exception:
+        challenge.delete()
+        logger.exception("One-time code delivery failed")
+        return fail("Кодты email арқылы жіберу мүмкін болмады. Пошта баптауын тексеріңіз.", 503)
+    return JsonResponse({"verificationRequired": True, "challengeId": str(challenge.id),
+        "email": email, "delivery": "file" if settings.EMAIL_BACKEND.endswith("filebased.EmailBackend") else "email"})
+
+
 @ensure_csrf_cookie
 def auth_view(request):
     if request.method == "GET":
@@ -153,6 +235,10 @@ def auth_view(request):
     if body is None:
         return fail("Сұрау пішімі қате")
     action = body.get("action")
+    if action == "verify-code":
+        if rate_limited("verify-ip", request.META.get("REMOTE_ADDR", ""), 30, 15 * 60):
+            return fail("Тексеру әрекеттері тым көп. 15 минуттан кейін қайталаңыз.", 429)
+        return verify_code(body)
     if action not in ("register", "login"):
         return fail("Белгісіз әрекет")
     identifier = body.get("identifier", body.get("email", ""))
@@ -167,6 +253,8 @@ def auth_view(request):
     if not password or len(password) > 128:
         return fail("Құпиясөзді тексеріңіз")
     if action == "register":
+        if rate_limited("register-ip", request.META.get("REMOTE_ADDR", ""), 10, 60 * 60) or rate_limited("register-email", email, 5, 60 * 60):
+            return fail("Код сұраулары тым көп. Кейінірек қайталаңыз.", 429)
         try:
             validate_email(email)
         except ValidationError:
@@ -182,12 +270,16 @@ def auth_view(request):
             return fail("Бұл email бұрын тіркелген", 409)
         if Account.objects.filter(phone=phone).exists():
             return fail("Бұл телефон бұрын тіркелген", 409)
-        try:
-            user = Account.objects.create(id=str(uuid.uuid4()), name=name, email=email, phone=phone,
-                                          password_hash=make_password(password), created_at=datetime.now(timezone.utc))
-        except IntegrityError:
-            return fail("Email немесе телефон бұрын тіркелген", 409)
-        send_account_email(user, "verify")
+        if settings.LOCAL_EMAIL_AUTH_BYPASS:
+            try:
+                user = Account.objects.create(id=str(uuid.uuid4()), name=name, email=email, phone=phone,
+                    password_hash=make_password(password), created_at=django_timezone.now(),
+                    email_verified_at=django_timezone.now())
+            except IntegrityError:
+                return fail("Email немесе телефон бұрын тіркелген", 409)
+            return authenticated_response(user, 201)
+        return send_login_code(purpose="register", email=email, name=name, phone=phone,
+                               password_hash=make_password(password))
     else:
         identifier = identifier.strip().lower()
         if rate_limited("login", f"{request.META.get('REMOTE_ADDR', '')}:{identifier}", 10, 15 * 60):
@@ -202,13 +294,11 @@ def auth_view(request):
         if user.password_hash.startswith("pbkdf2:"):
             user.password_hash = make_password(password)
             user.save(update_fields=["password_hash"])
-    token = secrets.token_urlsafe(32)
-    LoginSession.objects.create(token_hash=hashlib.sha256(token.encode()).hexdigest(), user=user,
-                                expires_at=int(time.time() * 1000) + SESSION_AGE * 1000)
-    response = JsonResponse({"user": public_user(user)}, status=201 if action == "register" else 200)
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_AGE, httponly=True,
-                        secure=not settings.DEBUG, samesite="Lax", path="/")
-    return response
+        if settings.LOCAL_EMAIL_AUTH_BYPASS:
+            return authenticated_response(user)
+        if rate_limited("login-email", user.email, 5, 60 * 60):
+            return fail("Код сұраулары тым көп. Кейінірек қайталаңыз.", 429)
+        return send_login_code(purpose="login", email=user.email, user=user)
 
 
 def password_reset_view(request):

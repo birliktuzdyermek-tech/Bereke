@@ -26,6 +26,8 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [emailServerError, setEmailServerError] = useState("");
+  const [challenge, setChallenge] = useState<{ id: string; email: string; delivery: string } | null>(null);
+  const [code, setCode] = useState("");
 
   const emailValue = email.trim();
   const emailProblem = !emailValue ? "Email мекенжайы бос болмауы керек."
@@ -35,6 +37,7 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
 
   const switchMode = (next: AuthMode) => {
     setError(""); setResetMode(false); setResetSent(false);
+    setChallenge(null); setCode("");
     setEmailTouched(false); setPasswordTouched(false); setSubmitted(false); setEmailServerError("");
     onModeChange(next);
   };
@@ -42,6 +45,21 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!mode) return;
+    if (challenge) {
+      if (!/^\d{6}$/.test(code)) { setError("Алты таңбалы кодты енгізіңіз."); return; }
+      setBusy(true); setError("");
+      try {
+        const response = await apiFetch("/api/auth", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "verify-code", challengeId: challenge.id, code }),
+        });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(result.error || "Кодты тексеру мүмкін болмады");
+        setChallenge(null); setCode(""); setPassword(""); onModeChange(null); onSuccess();
+      } catch (cause) { setError(cause instanceof Error ? cause.message : "Қате пайда болды"); }
+      finally { setBusy(false); }
+      return;
+    }
     if (resetMode) {
       setBusy(true); setError("");
       try {
@@ -67,7 +85,7 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: mode, name, email, phone, identifier, password }),
       });
-      const result = await response.json() as { error?: string };
+      const result = await response.json() as { error?: string; user?: { email: string }; verificationRequired?: boolean; challengeId?: string; email?: string; delivery?: string };
       if (!response.ok) {
         if (mode === "register" && response.status === 409 && result.error?.toLowerCase().includes("email")) {
           setEmailServerError(result.error);
@@ -75,27 +93,39 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
         }
         throw new Error(result.error || "Әрекет орындалмады");
       }
-      setPassword(""); onModeChange(null); onSuccess();
+      if (result.verificationRequired && result.challengeId && result.email) {
+        setChallenge({ id: result.challengeId, email: result.email, delivery: result.delivery || "email" });
+        setPassword("");
+      } else if (result.user) {
+        setPassword(""); onModeChange(null); onSuccess();
+      } else { throw new Error("Django сервері ескі нұсқада жұмыс істеп тұр. Серверді қайта іске қосыңыз."); }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Қате пайда болды"); }
     finally { setBusy(false); }
   };
 
   const close = () => {
     setError(""); setResetMode(false); setResetSent(false);
+    setChallenge(null); setCode("");
     setEmailTouched(false); setPasswordTouched(false); setSubmitted(false); setEmailServerError("");
     onModeChange(null);
   };
 
   return <Dialog open={mode !== null} onOpenChange={open => { if (!open) close(); }}>
     <DialogContent className="auth-dialog">
-      <DialogHeader><DialogTitle>{resetMode ? "Құпиясөзді қалпына келтіру" : mode === "register" ? "Тіркелу" : "Кіру"}</DialogTitle></DialogHeader>
-      <p className="auth-intro">{resetMode ? "Қалпына келтіру сілтемесін email арқылы жібереміз." : mode === "register" ? "Жеке қаржы кабинетіңізді ашыңыз." : "Жеке кабинетіңізге кіріңіз."}</p>
-      {!resetMode && <div className="auth-switch" role="group" aria-label="Кіру түрі">
+      <DialogHeader><DialogTitle>{challenge ? "Email кодын растау" : resetMode ? "Құпиясөзді қалпына келтіру" : mode === "register" ? "Тіркелу" : "Кіру"}</DialogTitle></DialogHeader>
+      <p className="auth-intro">{challenge ? <>Алты таңбалы код: <strong>{challenge.email}</strong>. Код 10 минут жарамды.</> : resetMode ? "Қалпына келтіру сілтемесін email арқылы жібереміз." : mode === "register" ? "Жеке қаржы кабинетіңізді ашыңыз." : "Жеке кабинетіңізге кіріңіз."}</p>
+      {!resetMode && !challenge && <div className="auth-switch" role="group" aria-label="Кіру түрі">
         <button type="button" className={mode === "login" ? "selected" : ""} onClick={() => switchMode("login")}>Кіру</button>
         <button type="button" className={mode === "register" ? "selected" : ""} onClick={() => switchMode("register")}>Тіркелу</button>
       </div>}
       <form className="auth-form" onSubmit={submit} noValidate={mode === "register" && !resetMode}>
-        {resetMode ? <>
+        {challenge ? <>
+          {challenge.delivery === "file" && <p className="auth-success" role="status">Жергілікті режим: код <code>backend/data/mail/</code> ішіндегі соңғы хатта сақталды. Gmail үшін SMTP баптауын қосыңыз.</p>}
+          <label>Растау коды<input type="text" inputMode="numeric" autoComplete="one-time-code" required pattern="[0-9]{6}" maxLength={6} value={code} onChange={event => { setCode(event.target.value.replace(/\D/g, "").slice(0, 6)); setError(""); }} placeholder="000000" autoFocus /></label>
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? "Күтіңіз…" : "Кодты растау"}</button>
+          <button className="auth-link-button" type="button" onClick={() => { setChallenge(null); setCode(""); setError(""); }}>Артқа қайту</button>
+        </> : resetMode ? <>
           {resetSent ? <p className="auth-success" role="status">Егер бұл email тіркелген болса, қалпына келтіру сілтемесі жіберілді.</p> : <label>Email<input type="email" autoComplete="email" required maxLength={254} value={resetEmail} onChange={event => setResetEmail(event.target.value)} placeholder="name@example.com" /></label>}
           {error && <p className="auth-error" role="alert">{error}</p>}
           {!resetSent && <button className="primary-button auth-submit" type="submit" disabled={busy}>{busy ? "Күтіңіз…" : "Сілтемені жіберу"}</button>}

@@ -1,5 +1,7 @@
 import json
 from datetime import timedelta
+import re
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.core import mail
@@ -10,7 +12,12 @@ from django.test import Client
 from django.test.utils import override_settings
 from django.utils import timezone
 
-from .models import Account, Budget, Card, Transaction
+from .models import Account, Budget, Card, EmailChallenge, Transaction
+
+
+def confirm_last_code(client, challenge_id):
+    code = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+    return client.post("/api/auth", data=json.dumps({"action": "verify-code", "challengeId": challenge_id, "code": code}), content_type="application/json")
 
 
 class AdminTests(TestCase):
@@ -57,6 +64,35 @@ class AdminTests(TestCase):
         self.assertTrue(Transaction.objects.filter(user=self.account, merchant="Test shop", amount=2500).exists())
 
 
+@override_settings(LOCAL_EMAIL_AUTH_BYPASS=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class LocalEmailBypassTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def test_register_and_login_require_password_but_no_email_code(self):
+        registration = self.client.post("/api/auth", data=json.dumps({
+            "action": "register", "name": "Local User", "email": "local@example.com",
+            "phone": "+77001234567", "password": "secure-password-123",
+        }), content_type="application/json")
+        self.assertEqual(registration.status_code, 201)
+        self.assertEqual(registration.json()["user"]["email"], "local@example.com")
+        self.assertEqual(len(mail.outbox), 0)
+
+        self.client.delete("/api/auth")
+        wrong = self.client.post("/api/auth", data=json.dumps({
+            "action": "login", "identifier": "local@example.com", "password": "wrong-password",
+        }), content_type="application/json")
+        self.assertEqual(wrong.status_code, 401)
+        self.assertIsNone(self.client.get("/api/auth").json()["user"])
+
+        login = self.client.post("/api/auth", data=json.dumps({
+            "action": "login", "identifier": "local@example.com", "password": "secure-password-123",
+        }), content_type="application/json")
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.json()["user"]["email"], "local@example.com")
+        self.assertEqual(len(mail.outbox), 0)
+
+
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class PhoneAuthenticationTests(TestCase):
     def setUp(self):
@@ -70,6 +106,10 @@ class PhoneAuthenticationTests(TestCase):
             "action": "register", "name": "Test User", "email": "test@example.com",
             "phone": "8 (700) 123-45-67", "password": "secure-password-123",
         })
+        self.assertEqual(registration.status_code, 200)
+        self.assertIsNone(self.client.get("/api/auth").json()["user"])
+        self.assertFalse(Account.objects.filter(email="test@example.com").exists())
+        registration = confirm_last_code(self.client, registration.json()["challengeId"])
         self.assertEqual(registration.status_code, 201)
         self.assertEqual(registration.json()["user"]["phone"], "+77001234567")
         self.assertEqual(Account.objects.get(email="test@example.com").phone, "+77001234567")
@@ -89,10 +129,37 @@ class PhoneAuthenticationTests(TestCase):
 
         self.client.delete("/api/auth")
         phone_login = self.post_auth({"action": "login", "identifier": "+7 700 123 45 67", "password": "secure-password-123"})
+        self.assertIsNone(self.client.get("/api/auth").json()["user"])
+        phone_login = confirm_last_code(self.client, phone_login.json()["challengeId"])
         self.assertEqual(phone_login.status_code, 200)
         self.client.delete("/api/auth")
         email_login = self.post_auth({"action": "login", "identifier": "test@example.com", "password": "secure-password-123"})
+        email_login = confirm_last_code(self.client, email_login.json()["challengeId"])
         self.assertEqual(email_login.status_code, 200)
+
+    def test_wrong_code_expires_after_five_attempts(self):
+        response = self.post_auth({"action": "register", "name": "Test User", "email": "test@example.com",
+            "phone": "+77001234567", "password": "secure-password-123"})
+        challenge_id = response.json()["challengeId"]
+        correct = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+        wrong = "000000" if correct != "000000" else "111111"
+        for _ in range(5):
+            attempt = self.post_auth({"action": "verify-code", "challengeId": challenge_id, "code": wrong})
+            self.assertEqual(attempt.status_code, 400)
+        self.assertEqual(self.post_auth({"action": "verify-code", "challengeId": challenge_id, "code": correct}).status_code, 400)
+        self.assertFalse(Account.objects.exists())
+
+    def test_expired_code_and_delivery_failure(self):
+        response = self.post_auth({"action": "register", "name": "Test User", "email": "test@example.com",
+            "phone": "+77001234567", "password": "secure-password-123"})
+        EmailChallenge.objects.filter(pk=response.json()["challengeId"]).update(expires_at=timezone.now() - timedelta(seconds=1))
+        self.assertEqual(confirm_last_code(self.client, response.json()["challengeId"]).status_code, 400)
+        self.assertFalse(Account.objects.exists())
+        with patch("finance.views.send_mail", side_effect=OSError("SMTP unavailable")):
+            failed = self.post_auth({"action": "register", "name": "Another User", "email": "other@example.com",
+                "phone": "+77001234568", "password": "secure-password-123"})
+        self.assertEqual(failed.status_code, 503)
+        self.assertFalse(EmailChallenge.objects.filter(email="other@example.com").exists())
 
     def test_registration_rejects_invalid_phone(self):
         response = self.post_auth({
@@ -117,10 +184,11 @@ class PhoneAuthenticationTests(TestCase):
 class AccountRecoveryTests(TestCase):
     def setUp(self):
         cache.clear()
-        self.client.post("/api/auth", data=json.dumps({
+        registration = self.client.post("/api/auth", data=json.dumps({
             "action": "register", "name": "Test User", "email": "recover@example.com",
             "phone": "+77001234567", "password": "original-password-123",
         }), content_type="application/json")
+        confirm_last_code(self.client, registration.json()["challengeId"])
 
     def token_from_last_email(self):
         link = next(line for line in mail.outbox[-1].body.splitlines() if line.startswith("http"))
@@ -128,7 +196,8 @@ class AccountRecoveryTests(TestCase):
 
     def test_email_verification_and_resend(self):
         self.assertEqual(len(mail.outbox), 1)
-        self.assertFalse(Account.objects.get(email="recover@example.com").email_verified_at)
+        self.assertTrue(Account.objects.get(email="recover@example.com").email_verified_at)
+        Account.objects.filter(email="recover@example.com").update(email_verified_at=None)
         response = self.client.post("/api/email-verification", data="{}", content_type="application/json")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 2)
@@ -156,6 +225,7 @@ class AccountRecoveryTests(TestCase):
         old_login = self.client.post("/api/auth", data=json.dumps({"action": "login", "identifier": "recover@example.com", "password": "original-password-123"}), content_type="application/json")
         self.assertEqual(old_login.status_code, 401)
         new_login = self.client.post("/api/auth", data=json.dumps({"action": "login", "identifier": "recover@example.com", "password": "replacement-password-456"}), content_type="application/json")
+        new_login = confirm_last_code(self.client, new_login.json()["challengeId"])
         self.assertEqual(new_login.status_code, 200)
 
 
@@ -170,7 +240,7 @@ class BudgetTests(TestCase):
                 "action": "register", "name": "Test User", "email": email,
                 "phone": phone, "password": "secure-password-123",
             }), content_type="application/json")
-            self.assertEqual(response.status_code, 201)
+            self.assertEqual(confirm_last_code(client, response.json()["challengeId"]).status_code, 201)
 
     def post_budget(self, client, category, limit):
         return client.post("/api/budgets", data=json.dumps({"category": category, "monthlyLimit": limit}),
@@ -216,8 +286,9 @@ class TransactionEditingTests(TestCase):
         self.other_client = Client()
         for email, phone, client in (("first@example.com", "+77001234567", self.client),
                                      ("second@example.com", "+77001234568", self.other_client)):
-            client.post("/api/auth", data=json.dumps({"action": "register", "name": "Test User",
+            response = client.post("/api/auth", data=json.dumps({"action": "register", "name": "Test User",
                 "email": email, "phone": phone, "password": "secure-password-123"}), content_type="application/json")
+            confirm_last_code(client, response.json()["challengeId"])
         self.user = Account.objects.get(email="first@example.com")
         self.item = Transaction.objects.create(user=self.user, merchant="Old", category="Азық-түлік",
             amount=1000, type="expense", tx_date=timezone.localdate(), created_at=timezone.now())

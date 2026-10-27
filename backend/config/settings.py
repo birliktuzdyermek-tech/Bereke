@@ -6,9 +6,13 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-change-in-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+LOCAL_EMAIL_AUTH_BYPASS = DEBUG and os.environ.get("DJANGO_LOCAL_EMAIL_AUTH_BYPASS") == "1"
 if not DEBUG and not os.environ.get("DJANGO_SECRET_KEY"):
     raise ImproperlyConfigured("DJANGO_SECRET_KEY is required when DJANGO_DEBUG=0")
 ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if host.strip()]
+for render_host in (os.environ.get("RENDER_EXTERNAL_HOSTNAME"), os.environ.get("RENDER_SERVICE_NAME")):
+    if render_host and render_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(render_host)
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:5187,http://localhost:5187,http://127.0.0.1:5173,http://localhost:5173").split(",") if origin.strip()]
 
 INSTALLED_APPS = [
@@ -83,3 +87,4 @@ EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("DJANGO_EMAIL_USE_TLS", "1") == "1"
+EMAIL_TIMEOUT = 10

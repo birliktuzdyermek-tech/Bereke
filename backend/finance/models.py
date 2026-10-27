@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 
 
 class Account(models.Model):
@@ -24,6 +25,24 @@ class LoginSession(models.Model):
 
     class Meta:
         db_table = "sessions"
+
+
+class EmailChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    purpose = models.CharField(max_length=8)
+    email = models.EmailField(max_length=254)
+    code_hash = models.CharField(max_length=64)
+    user = models.ForeignKey(Account, null=True, blank=True, on_delete=models.CASCADE)
+    pending_name = models.CharField(max_length=80, blank=True)
+    pending_phone = models.CharField(max_length=16, blank=True)
+    pending_password_hash = models.CharField(max_length=255, blank=True)
+    password_fingerprint = models.CharField(max_length=64, blank=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "email_challenges"
 
 
 class Card(models.Model):

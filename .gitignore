@@ -35,6 +35,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!/lesson-07-php/.env.example
+/lesson-07-php/var/
 
 # vercel
 .vercel

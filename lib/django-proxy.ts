@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 
-const backend = env.DJANGO_API_URL || process.env.DJANGO_API_URL || "http://127.0.0.1:8011";
+const configuredBackend = env.DJANGO_API_URL || process.env.DJANGO_API_URL || "http://127.0.0.1:8011";
+const backend = /^https?:\/\//.test(configuredBackend) ? configuredBackend : `http://${configuredBackend}`;
 
 export async function djangoProxy(request: Request, resource: "auth" | "profile" | "finance" | "budgets" | "password-reset" | "password-reset/confirm" | "email-verification") {
   const url = new URL(`/api/${resource}${new URL(request.url).search}`, backend);
