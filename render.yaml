@@ -3,22 +3,29 @@ services:
     name: bereke-web
     runtime: node
     plan: free
-    buildCommand: pnpm install --frozen-lockfile && pnpm build
-    startCommand: node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 0.0.0.0 --port $PORT
+    buildCommand: pnpm install --frozen-lockfile && BEREKE_TARGET=node pnpm build
+    startCommand: node node_modules/vinext/dist/cli.js start --hostname 0.0.0.0 --port $PORT
     envVars:
+      # Free web services can send but not receive private-network traffic,
+      # so the proxy reaches Django over its public https URL.
       - key: DJANGO_API_URL
         fromService:
           name: bereke-api
           type: web
-          property: hostport
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: BEREKE_PROXY_SECRET
+        fromService:
+          name: bereke-api
+          type: web
+          envVarKey: BEREKE_PROXY_SECRET
 
   - type: web
     name: bereke-api
     runtime: python
     rootDir: backend
     plan: free
-    buildCommand: pip install -r requirements.txt
-    preDeployCommand: python manage.py migrate --noinput
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    preDeployCommand: python manage.py migrate --noinput && python manage.py createcachetable
     startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DATABASE_URL
@@ -26,6 +33,8 @@ services:
           name: bereke-db
           property: connectionString
       - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: BEREKE_PROXY_SECRET
         generateValue: true
       - key: DJANGO_DEBUG
         value: "0"

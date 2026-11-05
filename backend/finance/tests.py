@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 import re
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -317,3 +317,75 @@ class TransactionEditingTests(TestCase):
         self.item.refresh_from_db()
         self.assertEqual(self.item.amount, 1000)
         self.assertEqual(self.item.category, "Азық-түлік")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", BEREKE_PROXY_SECRET="test-proxy-secret")
+class ClientIpTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def reset(self, ip, secret="test-proxy-secret", email="nobody@example.com"):
+        return self.client.post("/api/password-reset", data=json.dumps({"email": email}),
+            content_type="application/json", HTTP_X_BEREKE_CLIENT_IP=ip, HTTP_X_BEREKE_PROXY_SECRET=secret)
+
+    def test_forwarded_ip_is_trusted_only_with_secret(self):
+        from .views import client_ip
+        from django.test import RequestFactory
+        factory = RequestFactory()
+        good = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="203.0.113.7", HTTP_X_BEREKE_PROXY_SECRET="test-proxy-secret")
+        bad = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="203.0.113.7", HTTP_X_BEREKE_PROXY_SECRET="wrong")
+        junk = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="not-an-ip", HTTP_X_BEREKE_PROXY_SECRET="test-proxy-secret")
+        self.assertEqual(client_ip(good), "203.0.113.7")
+        self.assertEqual(client_ip(bad), "127.0.0.1")
+        self.assertEqual(client_ip(junk), "127.0.0.1")
+
+    def test_ip_limit_is_per_visitor_not_shared(self):
+        for n in range(10):
+            self.reset("198.51.100.1", email=f"a{n}@example.com")
+        from .views import rate_limited
+        # visitor A used up the reset-ip budget, visitor B still has a full one
+        self.assertTrue(rate_limited("reset-ip", "198.51.100.1", 10, 3600))
+        self.assertFalse(rate_limited("reset-ip", "198.51.100.2", 10, 3600))
+
+
+class RateLimitWindowTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def test_uses_database_cache(self):
+        from django.core.cache import caches
+        from django.core.cache.backends.db import DatabaseCache
+        self.assertIsInstance(caches["default"], DatabaseCache)
+
+    def test_window_does_not_slide_on_each_attempt(self):
+        from .views import rate_limited
+        import time
+        start = time.time()
+        with patch("finance.views.time.time", return_value=start):
+            for _ in range(3):
+                self.assertFalse(rate_limited("t", "x", 3, 3600))
+            self.assertTrue(rate_limited("t", "x", 3, 3600))
+        # 50 minutes later the hour-long window is still closed
+        with patch("finance.views.time.time", return_value=start + 3000):
+            self.assertTrue(rate_limited("t", "x", 3, 3600))
+        # after the window ends the counter starts over
+        with patch("finance.views.time.time", return_value=start + 3601):
+            self.assertFalse(rate_limited("t", "x", 3, 3600))
+
+    def test_cache_entry_keeps_full_ttl(self):
+        from .views import rate_limited
+        from django.db import connection
+        for _ in range(3):
+            rate_limited("ttl", "y", 10, 3600)
+        with connection.cursor() as cur:
+            cur.execute("SELECT expires FROM bereke_cache")
+            expires = cur.fetchone()[0]
+        if timezone.is_naive(expires):
+            expires = timezone.make_aware(expires, dt_timezone.utc)
+        self.assertGreater(expires, timezone.now() + timedelta(minutes=50))
+
+
+class SecurityHeaderTests(TestCase):
+    def test_admin_cannot_be_framed(self):
+        response = self.client.get("/admin/login/")
+        self.assertEqual(response["X-Frame-Options"], "DENY")

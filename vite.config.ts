@@ -13,6 +13,9 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
+// BEREKE_TARGET=node builds a plain Node server for `vinext start` (Render).
+// The default stays a Cloudflare Worker build for the Sites tooling.
+const nodeTarget = process.env.BEREKE_TARGET === "node";
 
 const localBindingConfig = {
   main: "./build/sites-worker.ts",
@@ -64,7 +67,7 @@ export default defineConfig(async ({ command }) => {
       vinext(),
       sites({ mockAuth: !managedLinux }),
       connectorPreview(),
-      cloudflare({
+      !nodeTarget && cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
         config: {

@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import hmac
 import json
 import secrets
@@ -52,20 +53,40 @@ def current_user(request):
     return session.user if session else None
 
 
+def client_ip(request):
+    """Real client IP. The Next.js proxy forwards it in X-Bereke-Client-IP;
+    trust that header only when the request carries the shared proxy secret."""
+    secret = settings.BEREKE_PROXY_SECRET
+    sent = request.META.get("HTTP_X_BEREKE_PROXY_SECRET", "")
+    if secret and sent and hmac.compare_digest(sent, secret):
+        forwarded = request.META.get("HTTP_X_BEREKE_CLIENT_IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    return request.META.get("REMOTE_ADDR", "")
+
+
 def public_user(user):
     return {"name": user.name, "email": user.email, "phone": user.phone,
             "emailVerified": bool(user.email_verified_at), "provider": "local"}
 
 
 def rate_limited(namespace, value, limit, seconds):
+    """Fixed-window counter. The window end is stored with the count because
+    DatabaseCache.incr() re-sets the key with the default timeout, which would
+    slide the window forward on every attempt."""
     key = "bereke:" + namespace + ":" + hashlib.sha256(value.encode()).hexdigest()
-    if cache.add(key, 1, timeout=seconds):
+    now = time.time()
+    if cache.add(key, (1, now + seconds), timeout=seconds):
         return False
-    try:
-        return cache.incr(key) > limit
-    except ValueError:
-        cache.set(key, 1, timeout=seconds)
+    entry = cache.get(key)
+    if not isinstance(entry, (tuple, list)) or len(entry) != 2 or entry[1] <= now:
+        cache.set(key, (1, now + seconds), timeout=seconds)
         return False
+    count, window_end = entry[0] + 1, entry[1]
+    cache.set(key, (count, window_end), timeout=max(1, int(window_end - now) + 1))
+    return count > limit
 
 
 def send_account_email(user, purpose):
@@ -236,7 +257,7 @@ def auth_view(request):
         return fail("Сұрау пішімі қате")
     action = body.get("action")
     if action == "verify-code":
-        if rate_limited("verify-ip", request.META.get("REMOTE_ADDR", ""), 30, 15 * 60):
+        if rate_limited("verify-ip", client_ip(request), 30, 15 * 60):
             return fail("Тексеру әрекеттері тым көп. 15 минуттан кейін қайталаңыз.", 429)
         return verify_code(body)
     if action not in ("register", "login"):
@@ -253,7 +274,7 @@ def auth_view(request):
     if not password or len(password) > 128:
         return fail("Құпиясөзді тексеріңіз")
     if action == "register":
-        if rate_limited("register-ip", request.META.get("REMOTE_ADDR", ""), 10, 60 * 60) or rate_limited("register-email", email, 5, 60 * 60):
+        if rate_limited("register-ip", client_ip(request), 10, 60 * 60) or rate_limited("register-email", email, 5, 60 * 60):
             return fail("Код сұраулары тым көп. Кейінірек қайталаңыз.", 429)
         try:
             validate_email(email)
@@ -282,7 +303,7 @@ def auth_view(request):
                                password_hash=make_password(password))
     else:
         identifier = identifier.strip().lower()
-        if rate_limited("login", f"{request.META.get('REMOTE_ADDR', '')}:{identifier}", 10, 15 * 60):
+        if rate_limited("login", f"{client_ip(request)}:{identifier}", 10, 15 * 60):
             return fail("Кіру әрекеттері тым көп. 15 минуттан кейін қайталаңыз.", 429)
         if "@" in identifier:
             user = Account.objects.filter(email__iexact=identifier).first()
@@ -309,7 +330,7 @@ def password_reset_view(request):
     if not isinstance(email, str):
         return fail("Email енгізіңіз")
     email = email.strip().lower()
-    allowed = len(email) <= 254 and not rate_limited("reset-ip", request.META.get("REMOTE_ADDR", ""), 10, 60 * 60)
+    allowed = len(email) <= 254 and not rate_limited("reset-ip", client_ip(request), 10, 60 * 60)
     allowed = allowed and not rate_limited("reset-account", email, 3, 60 * 60)
     if allowed:
         user = Account.objects.filter(email__iexact=email).first()

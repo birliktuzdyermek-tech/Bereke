@@ -15,7 +15,6 @@
 - `components/auth-dialog.tsx` — телефон нөмірімен тіркелу және email не телефон арқылы кіру терезесі.
 - `app/reset-password/page.tsx` және `app/verify-email/page.tsx` — құпиясөзді қалпына келтіру және email растау беттері.
 - `components/preferences-provider.tsx`, `lib/translations.ts` — қазақ, орыс, ағылшын тілдері және жарық/қараңғы тақырып. Таңдау браузерде сақталады.
-- `db/` және `drizzle/` — бұрынғы D1 схемасы мен миграциялары; сайттың қазіргі API-і оларды қолданбайды.
 
 ## Жергілікті іске қосу
 
@@ -27,6 +26,7 @@ Node.js 22.13+, pnpm 11 және Python 3.10+ керек. Екі термина�
 python -m venv backend/.venv
 backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 backend/.venv/Scripts/python.exe backend/manage.py migrate
+backend/.venv/Scripts/python.exe backend/manage.py createcachetable
 backend/.venv/Scripts/python.exe -u backend/manage.py runserver 127.0.0.1:8011 --noreload
 ```
 
@@ -82,7 +82,7 @@ backend/.venv/Scripts/python.exe backend/manage.py import_d1 backend/data/d1-sou
 1. PostgreSQL базасын дайындаңыз. Драйвер `backend/requirements.txt` ішінде бар.
 2. SQLite қолданылып тұрғанда деректерді шығарыңыз: `backend/.venv/Scripts/python.exe backend/manage.py dumpdata finance --indent 2 -o backend/data/finance-export.json`.
 3. `DATABASE_URL=postgresql://user:password@host:5432/database` айнымалысын орнатыңыз.
-4. `backend/.venv/Scripts/python.exe backend/manage.py migrate` және `backend/.venv/Scripts/python.exe backend/manage.py loaddata backend/data/finance-export.json` орындаңыз.
+4. `backend/.venv/Scripts/python.exe backend/manage.py migrate`, `backend/.venv/Scripts/python.exe backend/manage.py createcachetable` және `backend/.venv/Scripts/python.exe backend/manage.py loaddata backend/data/finance-export.json` орындаңыз.
 5. Django серверін қайта іске қосыңыз. Frontend кодын өзгерту қажет емес.
 
 Экспортта құпиясөз хэштері мен сессиялар бар, сондықтан оны тек жеке қауіпсіз жерде сақтаңыз. Өндірісте `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`, `DJANGO_ALLOWED_HOSTS` және `DJANGO_CSRF_TRUSTED_ORIGINS` мәндерін баптаңыз. Django сервері бөлек Python хостингінде жұмыс істеуі керек; Cloudflare Sites Python серверін іске қоспайды.
