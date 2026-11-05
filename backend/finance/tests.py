@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 import re
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -346,3 +346,40 @@ class ClientIpTests(TestCase):
         # visitor A used up the reset-ip budget, visitor B still has a full one
         self.assertTrue(rate_limited("reset-ip", "198.51.100.1", 10, 3600))
         self.assertFalse(rate_limited("reset-ip", "198.51.100.2", 10, 3600))
+
+
+class RateLimitWindowTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def test_uses_database_cache(self):
+        from django.core.cache import caches
+        from django.core.cache.backends.db import DatabaseCache
+        self.assertIsInstance(caches["default"], DatabaseCache)
+
+    def test_window_does_not_slide_on_each_attempt(self):
+        from .views import rate_limited
+        import time
+        start = time.time()
+        with patch("finance.views.time.time", return_value=start):
+            for _ in range(3):
+                self.assertFalse(rate_limited("t", "x", 3, 3600))
+            self.assertTrue(rate_limited("t", "x", 3, 3600))
+        # 50 minutes later the hour-long window is still closed
+        with patch("finance.views.time.time", return_value=start + 3000):
+            self.assertTrue(rate_limited("t", "x", 3, 3600))
+        # after the window ends the counter starts over
+        with patch("finance.views.time.time", return_value=start + 3601):
+            self.assertFalse(rate_limited("t", "x", 3, 3600))
+
+    def test_cache_entry_keeps_full_ttl(self):
+        from .views import rate_limited
+        from django.db import connection
+        for _ in range(3):
+            rate_limited("ttl", "y", 10, 3600)
+        with connection.cursor() as cur:
+            cur.execute("SELECT expires FROM bereke_cache")
+            expires = cur.fetchone()[0]
+        if timezone.is_naive(expires):
+            expires = timezone.make_aware(expires, dt_timezone.utc)
+        self.assertGreater(expires, timezone.now() + timedelta(minutes=50))

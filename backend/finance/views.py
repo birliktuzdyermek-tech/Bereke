@@ -73,14 +73,20 @@ def public_user(user):
 
 
 def rate_limited(namespace, value, limit, seconds):
+    """Fixed-window counter. The window end is stored with the count because
+    DatabaseCache.incr() re-sets the key with the default timeout, which would
+    slide the window forward on every attempt."""
     key = "bereke:" + namespace + ":" + hashlib.sha256(value.encode()).hexdigest()
-    if cache.add(key, 1, timeout=seconds):
+    now = time.time()
+    if cache.add(key, (1, now + seconds), timeout=seconds):
         return False
-    try:
-        return cache.incr(key) > limit
-    except ValueError:
-        cache.set(key, 1, timeout=seconds)
+    entry = cache.get(key)
+    if not isinstance(entry, (tuple, list)) or len(entry) != 2 or entry[1] <= now:
+        cache.set(key, (1, now + seconds), timeout=seconds)
         return False
+    count, window_end = entry[0] + 1, entry[1]
+    cache.set(key, (count, window_end), timeout=max(1, int(window_end - now) + 1))
+    return count > limit
 
 
 def send_account_email(user, purpose):

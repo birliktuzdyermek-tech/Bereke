@@ -71,6 +71,11 @@ LANGUAGE_CODE = "kk"
 TIME_ZONE = "Asia/Qyzylorda"
 USE_TZ = True
 STATIC_URL = "static/"
+# Shared across gunicorn workers (rate limits). Create with: manage.py createcachetable
+CACHES = {"default": {
+    "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+    "LOCATION": "bereke_cache",
+}}
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SESSION_COOKIE_SECURE = not DEBUG
