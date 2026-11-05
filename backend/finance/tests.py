@@ -383,3 +383,9 @@ class RateLimitWindowTests(TestCase):
         if timezone.is_naive(expires):
             expires = timezone.make_aware(expires, dt_timezone.utc)
         self.assertGreater(expires, timezone.now() + timedelta(minutes=50))
+
+
+class SecurityHeaderTests(TestCase):
+    def test_admin_cannot_be_framed(self):
+        response = self.client.get("/admin/login/")
+        self.assertEqual(response["X-Frame-Options"], "DENY")

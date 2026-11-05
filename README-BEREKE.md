@@ -15,7 +15,6 @@
 - `components/auth-dialog.tsx` — телефон нөмірімен тіркелу және email не телефон арқылы кіру терезесі.
 - `app/reset-password/page.tsx` және `app/verify-email/page.tsx` — құпиясөзді қалпына келтіру және email растау беттері.
 - `components/preferences-provider.tsx`, `lib/translations.ts` — қазақ, орыс, ағылшын тілдері және жарық/қараңғы тақырып. Таңдау браузерде сақталады.
-- `db/` және `drizzle/` — бұрынғы D1 схемасы мен миграциялары; сайттың қазіргі API-і оларды қолданбайды.
 
 ## Жергілікті іске қосу
 
