@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import hmac
 import json
 import secrets
@@ -50,6 +51,20 @@ def current_user(request):
     digest = hashlib.sha256(token.encode()).hexdigest()
     session = LoginSession.objects.select_related("user").filter(token_hash=digest, expires_at__gt=int(time.time() * 1000)).first()
     return session.user if session else None
+
+
+def client_ip(request):
+    """Real client IP. The Next.js proxy forwards it in X-Bereke-Client-IP;
+    trust that header only when the request carries the shared proxy secret."""
+    secret = settings.BEREKE_PROXY_SECRET
+    sent = request.META.get("HTTP_X_BEREKE_PROXY_SECRET", "")
+    if secret and sent and hmac.compare_digest(sent, secret):
+        forwarded = request.META.get("HTTP_X_BEREKE_CLIENT_IP", "").strip()
+        try:
+            return str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    return request.META.get("REMOTE_ADDR", "")
 
 
 def public_user(user):
@@ -236,7 +251,7 @@ def auth_view(request):
         return fail("Сұрау пішімі қате")
     action = body.get("action")
     if action == "verify-code":
-        if rate_limited("verify-ip", request.META.get("REMOTE_ADDR", ""), 30, 15 * 60):
+        if rate_limited("verify-ip", client_ip(request), 30, 15 * 60):
             return fail("Тексеру әрекеттері тым көп. 15 минуттан кейін қайталаңыз.", 429)
         return verify_code(body)
     if action not in ("register", "login"):
@@ -253,7 +268,7 @@ def auth_view(request):
     if not password or len(password) > 128:
         return fail("Құпиясөзді тексеріңіз")
     if action == "register":
-        if rate_limited("register-ip", request.META.get("REMOTE_ADDR", ""), 10, 60 * 60) or rate_limited("register-email", email, 5, 60 * 60):
+        if rate_limited("register-ip", client_ip(request), 10, 60 * 60) or rate_limited("register-email", email, 5, 60 * 60):
             return fail("Код сұраулары тым көп. Кейінірек қайталаңыз.", 429)
         try:
             validate_email(email)
@@ -282,7 +297,7 @@ def auth_view(request):
                                password_hash=make_password(password))
     else:
         identifier = identifier.strip().lower()
-        if rate_limited("login", f"{request.META.get('REMOTE_ADDR', '')}:{identifier}", 10, 15 * 60):
+        if rate_limited("login", f"{client_ip(request)}:{identifier}", 10, 15 * 60):
             return fail("Кіру әрекеттері тым көп. 15 минуттан кейін қайталаңыз.", 429)
         if "@" in identifier:
             user = Account.objects.filter(email__iexact=identifier).first()
@@ -309,7 +324,7 @@ def password_reset_view(request):
     if not isinstance(email, str):
         return fail("Email енгізіңіз")
     email = email.strip().lower()
-    allowed = len(email) <= 254 and not rate_limited("reset-ip", request.META.get("REMOTE_ADDR", ""), 10, 60 * 60)
+    allowed = len(email) <= 254 and not rate_limited("reset-ip", client_ip(request), 10, 60 * 60)
     allowed = allowed and not rate_limited("reset-account", email, 3, 60 * 60)
     if allowed:
         user = Account.objects.filter(email__iexact=email).first()

@@ -13,6 +13,7 @@ ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS",
 for render_host in (os.environ.get("RENDER_EXTERNAL_HOSTNAME"), os.environ.get("RENDER_SERVICE_NAME")):
     if render_host and render_host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(render_host)
+BEREKE_PROXY_SECRET = os.environ.get("BEREKE_PROXY_SECRET", "")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:5187,http://localhost:5187,http://127.0.0.1:5173,http://localhost:5173").split(",") if origin.strip()]
 
 INSTALLED_APPS = [

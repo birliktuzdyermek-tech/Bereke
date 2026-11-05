@@ -317,3 +317,32 @@ class TransactionEditingTests(TestCase):
         self.item.refresh_from_db()
         self.assertEqual(self.item.amount, 1000)
         self.assertEqual(self.item.category, "Азық-түлік")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", BEREKE_PROXY_SECRET="test-proxy-secret")
+class ClientIpTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def reset(self, ip, secret="test-proxy-secret", email="nobody@example.com"):
+        return self.client.post("/api/password-reset", data=json.dumps({"email": email}),
+            content_type="application/json", HTTP_X_BEREKE_CLIENT_IP=ip, HTTP_X_BEREKE_PROXY_SECRET=secret)
+
+    def test_forwarded_ip_is_trusted_only_with_secret(self):
+        from .views import client_ip
+        from django.test import RequestFactory
+        factory = RequestFactory()
+        good = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="203.0.113.7", HTTP_X_BEREKE_PROXY_SECRET="test-proxy-secret")
+        bad = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="203.0.113.7", HTTP_X_BEREKE_PROXY_SECRET="wrong")
+        junk = factory.get("/", HTTP_X_BEREKE_CLIENT_IP="not-an-ip", HTTP_X_BEREKE_PROXY_SECRET="test-proxy-secret")
+        self.assertEqual(client_ip(good), "203.0.113.7")
+        self.assertEqual(client_ip(bad), "127.0.0.1")
+        self.assertEqual(client_ip(junk), "127.0.0.1")
+
+    def test_ip_limit_is_per_visitor_not_shared(self):
+        for n in range(10):
+            self.reset("198.51.100.1", email=f"a{n}@example.com")
+        from .views import rate_limited
+        # visitor A used up the reset-ip budget, visitor B still has a full one
+        self.assertTrue(rate_limited("reset-ip", "198.51.100.1", 10, 3600))
+        self.assertFalse(rate_limited("reset-ip", "198.51.100.2", 10, 3600))

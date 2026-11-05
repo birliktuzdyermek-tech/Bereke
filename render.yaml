@@ -11,6 +11,11 @@ services:
           name: bereke-api
           type: web
           property: hostport
+      - key: BEREKE_PROXY_SECRET
+        fromService:
+          name: bereke-api
+          type: web
+          envVarKey: BEREKE_PROXY_SECRET
 
   - type: web
     name: bereke-api
@@ -26,6 +31,8 @@ services:
           name: bereke-db
           property: connectionString
       - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: BEREKE_PROXY_SECRET
         generateValue: true
       - key: DJANGO_DEBUG
         value: "0"
