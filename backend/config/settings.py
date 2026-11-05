@@ -10,9 +10,12 @@ LOCAL_EMAIL_AUTH_BYPASS = DEBUG and os.environ.get("DJANGO_LOCAL_EMAIL_AUTH_BYPA
 if not DEBUG and not os.environ.get("DJANGO_SECRET_KEY"):
     raise ImproperlyConfigured("DJANGO_SECRET_KEY is required when DJANGO_DEBUG=0")
 ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if host.strip()]
-for render_host in (os.environ.get("RENDER_EXTERNAL_HOSTNAME"), os.environ.get("RENDER_SERVICE_NAME")):
-    if render_host and render_host not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(render_host)
+# The Next.js proxy calls the public URL, so the external hostname is enough.
+# The private-network hostname is not RENDER_SERVICE_NAME (Render adds a suffix);
+# if it is ever used, add it via DJANGO_ALLOWED_HOSTS.
+render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+if render_host and render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_host)
 BEREKE_PROXY_SECRET = os.environ.get("BEREKE_PROXY_SECRET", "")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "http://127.0.0.1:5187,http://localhost:5187,http://127.0.0.1:5173,http://localhost:5173").split(",") if origin.strip()]
 
@@ -27,6 +30,7 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -71,6 +75,11 @@ LANGUAGE_CODE = "kk"
 TIME_ZONE = "Asia/Qyzylorda"
 USE_TZ = True
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
 # Shared across gunicorn workers (rate limits). Create with: manage.py createcachetable
 CACHES = {"default": {
     "BACKEND": "django.core.cache.backends.db.DatabaseCache",

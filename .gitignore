@@ -5,6 +5,7 @@
 /.pnpm-store/
 /backend/.venv/
 /backend/data/
+/backend/staticfiles/
 /backend/__pycache__/
 *.pyc
 /.pnp

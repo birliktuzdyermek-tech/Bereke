@@ -1,8 +1,8 @@
-import { env } from "cloudflare:workers";
-
-const configuredBackend = env.DJANGO_API_URL || process.env.DJANGO_API_URL || "http://127.0.0.1:8011";
+// process.env works in both runtimes: Node (`vinext start`) and workerd, where
+// nodejs_compat fills process.env from the Worker's vars and secrets.
+const configuredBackend = process.env.DJANGO_API_URL || "http://127.0.0.1:8011";
 const backend = /^https?:\/\//.test(configuredBackend) ? configuredBackend : `http://${configuredBackend}`;
-const proxySecret = env.BEREKE_PROXY_SECRET || process.env.BEREKE_PROXY_SECRET || "";
+const proxySecret = process.env.BEREKE_PROXY_SECRET || "";
 
 // The browser never talks to Django directly, so Django sees this server's IP.
 // Pass the visitor's IP along; Django trusts it only with the shared secret.
