@@ -51,10 +51,14 @@ services:
           envVarKey: RENDER_EXTERNAL_URL
       - key: DJANGO_EMAIL_BACKEND
         value: django.core.mail.backends.smtp.EmailBackend
+      # Free Render services cannot reach SMTP ports 25/465/587, so mail goes
+      # through the Brevo relay on 2525 (STARTTLS). DJANGO_EMAIL_USER is the
+      # Brevo SMTP login, DJANGO_EMAIL_PASSWORD an SMTP key, and
+      # DJANGO_FROM_EMAIL a sender address verified in Brevo.
       - key: DJANGO_EMAIL_HOST
-        value: smtp.gmail.com
+        value: smtp-relay.brevo.com
       - key: DJANGO_EMAIL_PORT
-        value: "587"
+        value: "2525"
       - key: DJANGO_EMAIL_USE_TLS
         value: "1"
       - key: DJANGO_EMAIL_USER
