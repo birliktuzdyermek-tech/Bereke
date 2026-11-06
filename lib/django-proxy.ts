@@ -33,6 +33,15 @@ export async function djangoProxy(request: Request, resource: "auth" | "profile"
       cache: "no-store",
       redirect: "manual",
     });
+    // The API only speaks JSON. Anything else on an error status is an infrastructure page
+    // (Render's "waking up"/502 page, a bare Django 500) that the browser could not parse.
+    if (upstream.status >= 400 && !/json/i.test(upstream.headers.get("content-type") || "")) {
+      console.error("Django API returned a non-JSON error", upstream.status);
+      void upstream.body?.cancel();
+      return upstream.status >= 500
+        ? Response.json({ error: "Сервер қазір оянып жатыр. Бір минуттан кейін қайталаңыз." }, { status: 503, headers: { "cache-control": "no-store" } })
+        : Response.json({ error: "Әрекет орындалмады" }, { status: upstream.status, headers: { "cache-control": "no-store" } });
+    }
     const responseHeaders = new Headers();
     for (const name of ["content-type", "cache-control"]) {
       const value = upstream.headers.get(name);

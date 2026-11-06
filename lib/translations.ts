@@ -198,6 +198,7 @@ const words: Record<string, [string, string]> = {
   "Email мекенжайын дұрыс енгізіңіз": ["Введите корректный email", "Enter a valid email address"],
   "Әрекет орындалмады": ["Не удалось выполнить действие", "Action could not be completed"],
   "Қате пайда болды": ["Произошла ошибка", "An error occurred"],
+  "Сервер қазір оянып жатыр. Бір минуттан кейін қайталаңыз.": ["Сервер сейчас просыпается. Повторите через минуту.", "The server is waking up. Try again in a minute."],
   "Деректерді жүктеу мүмкін болмады.": ["Не удалось загрузить данные.", "Could not load data."],
   "Жеке кабинетке кіру керек.": ["Нужно войти в личный кабинет.", "Please sign in to your account."],
   "Өзгеріс сақталды": ["Изменение сохранено", "Change saved"],
