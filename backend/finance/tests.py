@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta, timezone as dt_timezone
+from datetime import date, timedelta, timezone as dt_timezone
 import re
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -389,3 +389,99 @@ class SecurityHeaderTests(TestCase):
     def test_admin_cannot_be_framed(self):
         response = self.client.get("/admin/login/")
         self.assertEqual(response["X-Frame-Options"], "DENY")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class AnalyticsTests(TestCase):
+    """Period totals come from one SQL scope: current user + calendar-month date range."""
+    TODAY = date(2026, 11, 15)
+    # (owner, date, type, category, amount): boundary days sit exactly on window edges
+    FIXTURE = [
+        ("a", date(2026, 12, 1), "income", "Жалақы", 7000),     # next month: in no window
+        ("a", date(2026, 11, 30), "income", "Жалақы", 1000),    # last day of current month: inside
+        ("a", date(2026, 11, 1), "expense", "Азық-түлік", 200),  # first day of 1-month window
+        ("a", date(2026, 10, 31), "expense", "Көлік", 300),      # one day before the 1-month window
+        ("a", date(2026, 9, 1), "expense", "Азық-түлік", 400),   # first day of 3-month window
+        ("a", date(2026, 8, 31), "expense", "Көлік", 500),       # one day before the 3-month window
+        ("a", date(2026, 6, 1), "income", "Жалақы", 2000),       # first day of 6-month window
+        ("a", date(2026, 5, 31), "expense", "Тұрғын үй", 600),   # one day before the 6-month window
+        ("a", date(2025, 12, 1), "expense", "Көлік", 700),       # first day of 12-month window
+        ("a", date(2025, 11, 30), "income", "Жалақы", 800),      # one day before the 12-month window
+        ("b", date(2026, 11, 10), "expense", "Азық-түлік", 9999),  # another user: never counted
+    ]
+
+    def setUp(self):
+        cache.clear()
+        self.other = Client()
+        for client, email, phone in ((self.client, "first@example.com", "+77001234567"),
+                                     (self.other, "second@example.com", "+77001234568")):
+            response = client.post("/api/auth", data=json.dumps({
+                "action": "register", "name": "Test User", "email": email,
+                "phone": phone, "password": "secure-password-123",
+            }), content_type="application/json")
+            self.assertEqual(confirm_last_code(client, response.json()["challengeId"]).status_code, 201)
+        owners = {"a": Account.objects.get(email="first@example.com"), "b": Account.objects.get(email="second@example.com")}
+        for owner, day, kind, category, amount in self.FIXTURE:
+            Transaction.objects.create(user=owners[owner], merchant="Example", category=category, amount=amount,
+                                       type=kind, tx_date=day, created_at=timezone.now())
+
+    def get(self, months, client=None):
+        with patch("finance.views.django_timezone.localdate", return_value=self.TODAY):
+            return (client or self.client).get(f"/api/analytics?months={months}")
+
+    def test_totals_categories_and_monthly_series_per_period(self):
+        expected = {
+            1: dict(income=1000, expense=200, balance=800, categories=[("Азық-түлік", 200)], previous=(0, 300),
+                    monthly=[("2026-11", 1000, 200, 800)], start="2026-11-01"),
+            3: dict(income=1000, expense=900, balance=100, categories=[("Азық-түлік", 600), ("Көлік", 300)], previous=(2000, 500),
+                    monthly=[("2026-09", 0, 400, -400), ("2026-10", 0, 300, -700), ("2026-11", 1000, 200, 100)], start="2026-09-01"),
+            6: dict(income=3000, expense=1400, balance=1600, categories=[("Көлік", 800), ("Азық-түлік", 600)], previous=(0, 1300),
+                    monthly=None, start="2026-06-01"),
+            12: dict(income=3000, expense=2700, balance=300, categories=[("Көлік", 1500), ("Азық-түлік", 600), ("Тұрғын үй", 600)], previous=(800, 0),
+                     monthly=None, start="2025-12-01"),
+        }
+        for months, want in expected.items():
+            body = self.get(months).json()
+            self.assertEqual((body["income"], body["expense"], body["balance"]), (want["income"], want["expense"], want["balance"]), months)
+            self.assertEqual([(c["category"], c["total"]) for c in body["categories"]], want["categories"], months)
+            self.assertEqual((body["previous"]["income"], body["previous"]["expense"]), want["previous"], months)
+            self.assertEqual((body["from"], body["to"]), (want["start"], "2026-11-30"), months)
+            self.assertEqual(len(body["monthly"]), months)
+            if want["monthly"]:
+                self.assertEqual([(m["month"], m["income"], m["expense"], m["balance"]) for m in body["monthly"]], want["monthly"], months)
+
+    def test_chart_and_numbers_share_one_dataset(self):
+        for months in (1, 3, 6, 12):
+            body = self.get(months).json()
+            self.assertEqual(sum(m["income"] for m in body["monthly"]), body["income"])
+            self.assertEqual(sum(m["expense"] for m in body["monthly"]), body["expense"])
+            self.assertEqual(sum(c["total"] for c in body["categories"]), body["expense"])
+            self.assertEqual(body["balance"], body["income"] - body["expense"])
+            self.assertEqual(body["monthly"][-1]["balance"], body["balance"])  # chart line ends at the period balance
+
+    def test_empty_account_returns_zero_state(self):
+        newcomer = Client()
+        response = newcomer.post("/api/auth", data=json.dumps({"action": "register", "name": "Empty", "email": "empty@example.com",
+            "phone": "+77001234569", "password": "secure-password-123"}), content_type="application/json")
+        confirm_last_code(newcomer, response.json()["challengeId"])
+        for months in (1, 3, 6, 12):
+            body = self.get(months, newcomer).json()
+            self.assertEqual((body["income"], body["expense"], body["balance"], body["transactionCount"]), (0, 0, 0, 0))
+            self.assertEqual(body["categories"], [])
+            self.assertEqual(len(body["monthly"]), months)
+            self.assertTrue(all(m["income"] == m["expense"] == m["balance"] == 0 for m in body["monthly"]))
+
+    def test_other_users_data_is_never_counted(self):
+        body = self.get(12, self.other).json()
+        self.assertEqual((body["income"], body["expense"], body["transactionCount"]), (0, 9999, 1))
+
+    def test_rejects_anonymous_and_invalid_period(self):
+        self.assertEqual(Client().get("/api/analytics?months=3").status_code, 401)
+        for bad in ("0", "2", "13", "abc", ""):
+            self.assertEqual(self.get(bad).status_code, 400, bad)
+
+    def test_window_wraps_year_boundaries(self):
+        from .views import period_bounds
+        self.assertEqual(period_bounds(3, date(2026, 1, 15)), (date(2025, 11, 1), date(2026, 2, 1)))
+        self.assertEqual(period_bounds(1, date(2026, 12, 31)), (date(2026, 12, 1), date(2027, 1, 1)))
+        self.assertEqual(period_bounds(12, date(2026, 2, 28)), (date(2025, 3, 1), date(2026, 3, 1)))

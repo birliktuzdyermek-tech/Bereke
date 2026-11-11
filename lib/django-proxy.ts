@@ -13,7 +13,7 @@ function clientIp(request: Request) {
   return forwarded ? forwarded.split(",")[0].trim() : "";
 }
 
-export async function djangoProxy(request: Request, resource: "auth" | "profile" | "finance" | "budgets" | "password-reset" | "password-reset/confirm" | "email-verification") {
+export async function djangoProxy(request: Request, resource: "auth" | "profile" | "finance" | "analytics" | "budgets" | "password-reset" | "password-reset/confirm" | "email-verification") {
   const url = new URL(`/api/${resource}${new URL(request.url).search}`, backend);
   const headers = new Headers();
   for (const name of ["content-type", "cookie", "origin", "x-csrftoken"]) {

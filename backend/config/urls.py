@@ -8,7 +8,7 @@ def api_index(request):
     return JsonResponse({
         "status": "ok",
         "message": "Теңгерім Django API жұмыс істеп тұр",
-        "endpoints": ["/api/auth", "/api/profile", "/api/finance", "/api/budgets"],
+        "endpoints": ["/api/auth", "/api/profile", "/api/finance", "/api/analytics", "/api/budgets"],
     })
 
 
@@ -21,5 +21,6 @@ urlpatterns = [
     path("api/email-verification", views.email_verification_view),
     path("api/profile", views.profile_view),
     path("api/finance", views.finance_view),
+    path("api/analytics", views.analytics_view),
     path("api/budgets", views.budgets_view),
 ]
