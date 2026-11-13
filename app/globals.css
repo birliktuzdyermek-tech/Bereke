@@ -76,7 +76,7 @@ html[data-theme="dark"] .mobile-nav button[data-state="active"]{color:#17383b!im
 .ov-big{font-size:1.9rem;font-weight:600;letter-spacing:-.02em;line-height:1.15;overflow-wrap:anywhere}.ov-green{color:#1E6B4A}
 .ov-note{font-size:.74rem;color:#5E6862;margin:0}.ov-note b{color:#16201B}
 .ov-split{display:flex;gap:4px;height:8px}.ov-split span{border-radius:4px;min-width:4px}
-.ov-legend{display:grid;grid-template-columns:1fr auto;gap:6px 14px;font-size:.76rem;margin-top:6px}.ov-legend span{display:flex;align-items:center;gap:6px;color:#5E6862}.ov-legend i,.ov-keys i{width:8px;height:8px;border-radius:50%;display:block;flex:none}
+.ov-legend{display:grid;grid-template-columns:1fr auto auto;gap:6px 12px;font-size:.76rem;margin-top:6px;align-items:center}.ov-legend small{color:#5E6862;font-size:.72rem;min-width:3ch;text-align:right}.ov-legend span{display:flex;align-items:center;gap:6px;color:#5E6862}.ov-legend i,.ov-keys i{width:8px;height:8px;border-radius:50%;display:block;flex:none}
 .ov-meter{height:6px;background:#EEF0EC;border-radius:3px;margin-top:6px;overflow:hidden}.ov-meter span{display:block;height:100%;background:#1E6B4A;border-radius:3px}
 .ov-flow{display:flex;flex-wrap:wrap;gap:18px}
 .ov-flow-main{flex:999 1 420px;min-width:0;display:flex;flex-direction:column;gap:12px}
@@ -130,3 +130,9 @@ html[data-theme="dark"] .card-tx{border-color:#355055}html[data-theme="dark"] .c
 html[data-theme="dark"] .eyebrow,html[data-theme="dark"] .category-total span,html[data-theme="dark"] .tx-name small,html[data-theme="dark"] .sub-total span,html[data-theme="dark"] .sub-summary>p,html[data-theme="dark"] .empty-small,html[data-theme="dark"] .loading,html[data-theme="dark"] .subscription-card>p,html[data-theme="dark"] .subscription-footer small,html[data-theme="dark"] .empty-panel,html[data-theme="dark"] .entry-form label,html[data-theme="dark"] .type-switch button,html[data-theme="dark"] .form-help,html[data-theme="dark"] .auth-intro,html[data-theme="dark"] .auth-switch button,html[data-theme="dark"] .auth-form label,html[data-theme="dark"] .profile-form label,html[data-theme="dark"] .budget-summary span,html[data-theme="dark"] .budget-toolbar p,html[data-theme="dark"] .budget-form label,html[data-theme="dark"] .budget-amounts span,html[data-theme="dark"] .budget-card p,html[data-theme="dark"] .budget-empty p{color:#a7c0ba}
 html[data-theme="dark"] .advice-num,html[data-theme="dark"] .text-button,html[data-theme="dark"] .about-hero h1 em,html[data-theme="dark"] .security-list>div,html[data-theme="dark"] .email-verification{color:#6FCB98}
 html[data-theme="dark"] .positive{color:#6FCB98!important}html[data-theme="dark"] .profile-shortcut{color:#e8f3ee}
+.ov-empty{margin:0;padding:10px 12px;border-radius:10px;background:#F2F4F0;color:#16201B;font-size:.82rem}
+.ov-state{color:#5E6862;font-size:.9rem}
+.ov-details{border-top:1px solid #EEF0EC;padding-top:10px}.ov-details summary{cursor:pointer;font-size:.8rem;font-weight:600;color:#1E6B4A}
+.ov-details .table-wrap{margin-top:8px}.ov-table{min-width:0;font-size:.78rem}.ov-table th,.ov-table td{padding:8px 10px}.ov-table th{color:#5E6862}.ov-table tfoot th{color:#16201B;border-top:2px solid #E3E6E0}.ov-table td:first-child{display:table-cell;color:#16201B}
+html[data-theme="dark"] .ov-legend small,html[data-theme="dark"] .ov-state,html[data-theme="dark"] .ov-table th{color:#a7c0ba}
+html[data-theme="dark"] .ov-empty{background:#14262b;color:#e8f3ee}html[data-theme="dark"] .ov-details{border-color:#355055}html[data-theme="dark"] .ov-details summary{color:#6FCB98}html[data-theme="dark"] .ov-table tfoot th{color:#edf8f3;border-color:#355055}html[data-theme="dark"] .ov-table td:first-child{color:#edf8f3!important}

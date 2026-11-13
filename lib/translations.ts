@@ -271,6 +271,14 @@ const words: Record<string, [string, string]> = {
   "қаз": ["окт", "Oct"],
   "қар": ["ноя", "Nov"],
   "жел": ["дек", "Dec"],
+  // Period analytics
+  "Басқалары": ["Остальные", "Others"],
+  "Алдыңғы кезеңмен салыстырғанда": ["По сравнению с предыдущим периодом", "Compared with the previous period"],
+  "Бұл кезеңде операция жоқ. Барлық көрсеткіш 0 ₸.": ["За этот период операций нет. Все показатели равны 0 ₸.", "No transactions in this period. All figures are 0 ₸."],
+  "Айлар бойынша кесте": ["Таблица по месяцам", "Monthly table"],
+  "Ай": ["Месяц", "Month"],
+  "Барлығы": ["Итого", "Total"],
+  "Талдау деректерін жүктеу мүмкін болмады. Жаңарту батырмасын басыңыз.": ["Не удалось загрузить аналитику. Нажмите кнопку обновления.", "Could not load analytics. Press the refresh button."],
 };
 
 const months: Record<string, [string, string]> = {

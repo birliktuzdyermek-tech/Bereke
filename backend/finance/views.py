@@ -19,7 +19,8 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
+from django.db.models.functions import TruncMonth
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils import timezone as django_timezone
@@ -487,6 +488,60 @@ def budgets_view(request):
     budget, created = Budget.objects.update_or_create(
         user=user, category=category, defaults={"monthly_limit": limit})
     return JsonResponse({"item": {"id": budget.id, "category": category, "monthlyLimit": limit}}, status=201 if created else 200)
+
+
+PERIOD_MONTHS = (1, 3, 6, 12)
+
+
+def add_months(first_of_month, delta):
+    index = first_of_month.year * 12 + first_of_month.month - 1 + delta
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def period_bounds(months, today=None):
+    """Calendar-month window [start, end): the current month plus the previous months - 1."""
+    first = (today or django_timezone.localdate()).replace(day=1)
+    return add_months(first, -(months - 1)), add_months(first, 1)
+
+
+def income_expense(queryset):
+    row = queryset.aggregate(income=Sum("amount", filter=Q(type="income")), expense=Sum("amount", filter=Q(type="expense")))
+    return row["income"] or 0, row["expense"] or 0
+
+
+def analytics_view(request):
+    """Period totals, expense categories and monthly series, all from one date-bounded SQL scope."""
+    user = current_user(request)
+    if not user:
+        return fail("Кіру қажет", 401)
+    if request.method != "GET":
+        return fail("Әдіс қолдау таппайды", 405)
+    try:
+        months = int(request.GET.get("months", "3"))
+    except ValueError:
+        months = 0
+    if months not in PERIOD_MONTHS:
+        return fail("Кезең қате таңдалған")
+    start, end = period_bounds(months)
+    own = Transaction.objects.filter(user=user)  # the owner filter is mandatory for every query below
+    inside = own.filter(tx_date__gte=start, tx_date__lt=end)
+    income, expense = income_expense(inside)
+    previous_income, previous_expense = income_expense(own.filter(tx_date__gte=add_months(start, -months), tx_date__lt=start))
+    categories = [{"category": row["category"], "total": row["total"]}
+                  for row in inside.filter(type="expense").values("category").annotate(total=Sum("amount")).order_by("-total", "category")]
+    by_month = {(row["month"].year, row["month"].month): row for row in inside.annotate(month=TruncMonth("tx_date")).values("month").annotate(
+        income=Sum("amount", filter=Q(type="income")), expense=Sum("amount", filter=Q(type="expense")))}
+    monthly, running = [], 0  # running net inside the period; the last point equals the period balance
+    for offset in range(months):
+        first = add_months(start, offset)
+        row = by_month.get((first.year, first.month), {})
+        month_income, month_expense = row.get("income") or 0, row.get("expense") or 0
+        running += month_income - month_expense
+        monthly.append({"month": f"{first.year}-{first.month:02d}", "income": month_income, "expense": month_expense, "balance": running})
+    return JsonResponse({"months": months, "from": start.isoformat(), "to": (end - timedelta(days=1)).isoformat(),
+        "income": income, "expense": expense, "balance": income - expense,
+        "previous": {"income": previous_income, "expense": previous_expense},
+        "categories": categories, "monthly": monthly, "transactionCount": inside.count()})
 
 
 @ensure_csrf_cookie
