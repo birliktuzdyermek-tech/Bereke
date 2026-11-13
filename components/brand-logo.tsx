@@ -8,8 +8,9 @@ export function BrandLogo({ className = "", light = false, compact = false }: Br
   return (
     <span className={`brand-logo${light ? " brand-logo--light" : ""}${compact ? " brand-logo--compact" : ""}${className ? ` ${className}` : ""}`}>
       <svg className="brand-logo__symbol" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-        <defs><linearGradient id="bereke-tile" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse"><stop stopColor="#2F9068" /><stop offset="1" stopColor="#17583C" /></linearGradient></defs>
-        <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#bereke-tile)" />
+        {/* No gradient def: an SVG hidden with display:none (the sidebar on phones) cannot supply url(#id) to a visible copy. */}
+        <rect x="2" y="2" width="60" height="60" rx="18" fill="#1E6B4A" />
+        <path d="M20 2h24L2 44V20C2 10 10 2 20 2z" fill="#fff" fillOpacity=".1" />
         {/* Balance: one large weight on the left, two smaller ones on the right, level on the fulcrum. */}
         <g transform="translate(0 -5)">
           <path d="M32 40 24.5 54h15z" fill="#fff" stroke="#fff" strokeWidth="3" strokeLinejoin="round" />
