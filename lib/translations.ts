@@ -294,6 +294,8 @@ const words: Record<string, [string, string]> = {
   "Бюджет қойыңыз": ["Задайте бюджет", "Set a budget"],
   "Айлық лимит қойып, шығынды бақылаңыз": ["Задайте месячный лимит и следите за расходами", "Set a monthly limit and keep an eye on spending"],
   "Үлгі деректерді қарау": ["Посмотреть пример", "View sample data"],
+  // Waking server
+  "Сервер оянып жатыр. Бірнеше секундтан кейін бет өзі қайталайды.": ["Сервер просыпается. Через несколько секунд страница сама повторит запрос.", "The server is waking up. The page will retry on its own in a few seconds."],
 };
 
 const months: Record<string, [string, string]> = {
