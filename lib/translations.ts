@@ -279,6 +279,21 @@ const words: Record<string, [string, string]> = {
   "Ай": ["Месяц", "Month"],
   "Барлығы": ["Итого", "Total"],
   "Талдау деректерін жүктеу мүмкін болмады. Жаңарту батырмасын басыңыз.": ["Не удалось загрузить аналитику. Нажмите кнопку обновления.", "Could not load analytics. Press the refresh button."],
+  // Visual refresh
+  "Бүгін": ["Сегодня", "Today"],
+  "Кеше": ["Вчера", "Yesterday"],
+  "жұмсалмай қалды": ["не потрачено", "left unspent"],
+  // Quick add, bottom navigation, welcome
+  "Тағы": ["Ещё", "More"],
+  "Ақшаңыз қайда кетіп жатқанын көріңіз": ["Узнайте, куда уходят ваши деньги", "See where your money goes"],
+  "Кіріс пен шығысты тіркеңіз, санаттар бойынша талдаңыз, бюджет қойыңыз.": ["Записывайте доходы и расходы, анализируйте по категориям, задавайте бюджет.", "Record income and expenses, break them down by category and set a budget."],
+  "Операция қосыңыз": ["Добавьте операцию", "Add a transaction"],
+  "Сома, санат, күні: екі қозғалыс": ["Сумма, категория, дата: два касания", "Amount, category, date: two taps"],
+  "Санаттарды көріңіз": ["Смотрите категории", "See your categories"],
+  "Қай жерге көп кетіп жатыр": ["Где уходит больше всего", "Where most of it goes"],
+  "Бюджет қойыңыз": ["Задайте бюджет", "Set a budget"],
+  "Айлық лимит қойып, шығынды бақылаңыз": ["Задайте месячный лимит и следите за расходами", "Set a monthly limit and keep an eye on spending"],
+  "Үлгі деректерді қарау": ["Посмотреть пример", "View sample data"],
 };
 
 const months: Record<string, [string, string]> = {
