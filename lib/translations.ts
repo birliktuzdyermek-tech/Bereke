@@ -279,6 +279,10 @@ const words: Record<string, [string, string]> = {
   "Ай": ["Месяц", "Month"],
   "Барлығы": ["Итого", "Total"],
   "Талдау деректерін жүктеу мүмкін болмады. Жаңарту батырмасын басыңыз.": ["Не удалось загрузить аналитику. Нажмите кнопку обновления.", "Could not load analytics. Press the refresh button."],
+  // Visual refresh
+  "Бүгін": ["Сегодня", "Today"],
+  "Кеше": ["Вчера", "Yesterday"],
+  "жұмсалмай қалды": ["не потрачено", "left unspent"],
 };
 
 const months: Record<string, [string, string]> = {
