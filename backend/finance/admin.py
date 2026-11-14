@@ -2,25 +2,64 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin
 from django.utils import timezone
+from django.utils.html import format_html
 
 from .models import Account, Budget, Card, Subscription, Transaction
 
 
-admin.site.site_header = "Теңгерім әкімшілігі"
-admin.site.site_title = "Теңгерім әкімшілігі"
-admin.site.index_title = "Сайт әкімшілігі"
 admin.site.site_url = settings.FRONTEND_URL
+
+KINDS = (("income", "Кіріс"), ("expense", "Шығыс"))
+SPACE = " "
+
+
+def number(value):
+    return f"{value:,}".replace(",", SPACE)
+
+
+class ChoiceFilter(admin.SimpleListFilter):
+    """Filter with Kazakh labels instead of the raw stored values (income, active, ...)."""
+    options = ()
+
+    def lookups(self, request, model_admin):
+        return self.options
+
+    def queryset(self, request, queryset):
+        return queryset.filter(**{self.parameter_name: self.value()}) if self.value() else queryset
+
+
+class TypeFilter(ChoiceFilter):
+    title, parameter_name, options = "Түрі", "type", KINDS
+
+
+class StatusFilter(ChoiceFilter):
+    title, parameter_name, options = "Күйі", "status", (("active", "Белсенді"), ("cancelled", "Тоқтатылды"))
+
+
+class VerifiedFilter(admin.SimpleListFilter):
+    title, parameter_name = "Email расталған", "verified"
+
+    def lookups(self, request, model_admin):
+        return (("yes", "Иә"), ("no", "Жоқ"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(email_verified_at__isnull=False)
+        return queryset.filter(email_verified_at__isnull=True) if self.value() == "no" else queryset
 
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
     list_display = ("name", "email", "phone", "email_verified", "created_at")
     search_fields = ("name", "email", "phone")
-    list_filter = ("email_verified_at", "created_at")
+    search_help_text = "Аты-жөні, email немесе телефон бойынша іздеу"
+    list_filter = (VerifiedFilter, "created_at")
+    ordering = ("-created_at",)
+    list_per_page = 25
     fields = ("id", "name", "email", "phone", "email_verified_at", "created_at")
     readonly_fields = ("id", "email_verified_at", "created_at")
 
-    @admin.display(boolean=True, description="Email расталды")
+    @admin.display(boolean=True, description="Email расталған")
     def email_verified(self, obj):
         return bool(obj.email_verified_at)
 
@@ -63,6 +102,8 @@ class CardAdmin(CreatedAtAdmin):
     form = CardAdminForm
     list_display = ("bank_name", "last4", "user", "created_at")
     search_fields = ("bank_name", "user__name", "user__email")
+    search_help_text = "Банк атауы немесе қолданушы бойынша іздеу"
+    ordering = ("-created_at",)
     fields = ("user", "bank_name", "last4", "created_at")
 
 
@@ -87,10 +128,23 @@ class TransactionAdminForm(forms.ModelForm):
 @admin.register(Transaction)
 class TransactionAdmin(CreatedAtAdmin):
     form = TransactionAdminForm
-    list_display = ("merchant", "user", "category", "amount", "type", "tx_date")
-    list_filter = ("type", "category", "tx_date")
+    list_display = ("merchant", "category", "user", "type_badge", "amount_display", "tx_date")
+    list_filter = (TypeFilter, "category", "tx_date")
     search_fields = ("merchant", "category", "user__name", "user__email")
+    search_help_text = "Атауы, санат немесе қолданушы бойынша іздеу"
     date_hierarchy = "tx_date"
+    ordering = ("-tx_date", "-id")
+    list_per_page = 25
+
+    @admin.display(description="Түрі", ordering="type")
+    def type_badge(self, obj):
+        income = obj.type == "income"
+        return format_html('<span class="badge {}">{}</span>', "badge-in" if income else "badge-out", "Кіріс" if income else "Шығыс")
+
+    @admin.display(description="Сома, ₸", ordering="amount")
+    def amount_display(self, obj):
+        income = obj.type == "income"
+        return format_html('<span class="{}">{}{}</span>', "amt-in" if income else "amt-out", "+" if income else "−", number(obj.amount))
     fields = ("user", "card", "merchant", "category", "amount", "type", "tx_date", "created_at")
 
 
@@ -111,9 +165,16 @@ class SubscriptionAdminForm(forms.ModelForm):
 @admin.register(Subscription)
 class SubscriptionAdmin(CreatedAtAdmin):
     form = SubscriptionAdminForm
-    list_display = ("merchant", "user", "monthly_amount", "next_payment", "status")
-    list_filter = ("status", "next_payment")
+    list_display = ("merchant", "user", "monthly_amount", "next_payment", "status_badge")
+    list_filter = (StatusFilter, "next_payment")
     search_fields = ("merchant", "user__name", "user__email")
+    search_help_text = "Сервис немесе қолданушы бойынша іздеу"
+    ordering = ("next_payment",)
+
+    @admin.display(description="Күйі", ordering="status")
+    def status_badge(self, obj):
+        active = obj.status == "active"
+        return format_html('<span class="badge {}">{}</span>', "badge-on" if active else "badge-off", "Белсенді" if active else "Тоқтатылды")
     fields = ("user", "merchant", "monthly_amount", "next_payment", "status", "created_at")
 
 
@@ -134,6 +195,8 @@ class BudgetAdmin(admin.ModelAdmin):
     form = BudgetAdminForm
     list_display = ("category", "user", "monthly_limit", "updated_at")
     list_filter = ("category",)
+    search_help_text = "Санат немесе қолданушы бойынша іздеу"
+    ordering = ("category",)
     list_select_related = ("user",)
     search_fields = ("category", "user__name", "user__email")
     readonly_fields = ("updated_at",)

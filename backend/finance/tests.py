@@ -39,7 +39,7 @@ class AdminTests(TestCase):
         self.client.force_login(administrator)
         response = self.client.get("/admin/")
         self.assertEqual(response.status_code, 200)
-        for label in ("Accounts", "Cards", "Transactions", "Subscriptions", "Budgets"):
+        for label in ("Сайт қолданушылары", "Операциялар", "Карталар", "Жазылымдар", "Бюджеттер", "Басқару тақтасы"):
             self.assertContains(response, label)
 
         change_response = self.client.get(f"/admin/finance/account/{self.account.pk}/change/")
@@ -534,3 +534,59 @@ class EnsureAdminTests(TestCase):
         self.assertTrue(user.check_password("old-password-123456"))
         self.run_command(DJANGO_SUPERUSER_USERNAME="owner", DJANGO_SUPERUSER_PASSWORD="owner-long-password-1")
         self.assertTrue(self.users.objects.filter(username="owner", is_superuser=True).exists())
+
+
+class AdminDesignTests(TestCase):
+    """The admin home shows a summary of the site data, finance sections come first, lists use Kazakh labels."""
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser(username="site-admin", email="a@example.com", password="test-password-123")
+        self.client.force_login(self.admin_user)
+        self.account = Account.objects.create(id="design-1", name="Айгерім", email="aigerim@example.com", phone="+77001230001",
+                                              password_hash="x", created_at=timezone.now(), email_verified_at=timezone.now())
+        today = timezone.localdate()
+        for kind, amount, merchant in (("income", 480000, "Жалақы"), ("expense", 28500, "Magnum"), ("expense", 6800, "Такси")):
+            Transaction.objects.create(user=self.account, merchant=merchant, category="Азық-түлік", amount=amount, type=kind, tx_date=today, created_at=timezone.now())
+
+    def test_dashboard_numbers_and_recent_lists(self):
+        response = self.client.get("/admin/")
+        dash = response.context["dashboard"]
+        self.assertEqual(dash["accounts"]["total"], 1)
+        self.assertEqual(dash["accounts"]["verified"], 1)
+        self.assertEqual((dash["month_income"], dash["month_expense"], dash["month_balance"]), ("480 000 ₸", "35 300 ₸", "444 700 ₸"))
+        self.assertEqual(len(dash["recent_transactions"]), 3)
+        for text in ("480 000 ₸", "Айгерім", "Magnum", "Соңғы операциялар", "Соңғы тіркелгендер"):
+            self.assertContains(response, text)
+
+    def test_finance_sections_come_before_admin_users(self):
+        apps = [app["app_label"] for app in self.client.get("/admin/").context["app_list"]]
+        self.assertEqual(apps[:2], ["finance", "auth"])
+        models = [m["object_name"] for m in self.client.get("/admin/").context["app_list"][0]["models"]]
+        self.assertEqual(models, ["Account", "Transaction", "Card", "Subscription", "Budget"])
+
+    def test_transaction_list_shows_badges_signed_amounts_and_kazakh_filters(self):
+        response = self.client.get("/admin/finance/transaction/")
+        self.assertContains(response, "badge-in")
+        self.assertContains(response, "badge-out")
+        self.assertContains(response, "+480 000")
+        self.assertContains(response, "−28 500")
+        self.assertContains(response, "Түрі")
+        self.assertNotContains(response, ">income<")
+        filtered = self.client.get("/admin/finance/transaction/?type=income")
+        self.assertContains(filtered, "Жалақы")
+        self.assertNotContains(filtered, "Magnum")
+
+    def test_other_lists_and_forms_render(self):
+        for path in ("/admin/finance/account/", "/admin/finance/card/", "/admin/finance/subscription/", "/admin/finance/budget/",
+                     "/admin/finance/transaction/add/", f"/admin/finance/account/{self.account.pk}/change/"):
+            self.assertEqual(self.client.get(path).status_code, 200, path)
+        self.assertContains(self.client.get("/admin/finance/account/?verified=yes"), "Айгерім")
+        self.assertNotContains(self.client.get("/admin/finance/account/?verified=no"), "Айгерім")
+
+    def test_branding_and_login_page(self):
+        self.client.logout()
+        login = self.client.get("/admin/login/")
+        self.assertContains(login, "bereke-admin.css")
+        self.assertContains(login, "Теңгерім")
+        home = self.client.force_login(self.admin_user) or self.client.get("/admin/")
+        self.assertContains(home, "Сайтқа өту")
+        self.assertContains(home, "logo-mark.svg")
