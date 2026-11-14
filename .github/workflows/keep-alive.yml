@@ -1,0 +1,34 @@
+# Keeps the free Render services awake during the day so the first visitor does not wait for a cold start.
+#
+# Why only the daytime: Render's free plan gives 750 running hours per month for the whole workspace, shared by
+# bereke-web and bereke-api. Keeping both awake 24/7 would need about 1,490 hours and Render would stop them
+# mid-month. 04:00-14:55 UTC is 09:00-19:55 in Kazakhstan (UTC+5): about 11 awake hours a day for each service,
+# roughly 680 hours a month in total, which leaves a margin.
+#
+# One request to the site's /api/auth is proxied to the API, so it wakes both; the second request hits the API
+# directly in case the proxy hop fails while the site is still waking. A failed ping never fails the run
+# (a sleeping service answering late is expected and GitHub would e-mail every failure).
+name: Keep Render awake (daytime)
+
+on:
+  schedule:
+    - cron: "*/5 4-14 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the site and the API
+        run: |
+          for url in https://bereke-web.onrender.com/api/auth https://bereke-api.onrender.com/; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 5 "$url" || echo "000")
+            echo "$(date -u +%H:%M:%S) $url -> $code"
+          done
