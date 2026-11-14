@@ -27,7 +27,7 @@ services:
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
     # preDeployCommand is not available on the free plan, so migrations and the
     # rate-limit cache table are applied on every start (both are idempotent).
-    startCommand: python manage.py migrate --noinput && python manage.py createcachetable && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: python manage.py migrate --noinput && python manage.py createcachetable && python manage.py ensure_admin && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -66,6 +66,15 @@ services:
       - key: DJANGO_EMAIL_PASSWORD
         sync: false
       - key: DJANGO_FROM_EMAIL
+        sync: false
+      # Django admin at /admin/. ensure_admin creates this user on start; the password (at least 12 characters)
+      # is typed in the Render dashboard, never kept in the repository. An existing password is not overwritten
+      # unless DJANGO_ADMIN_RESET_PASSWORD=1 is set for one deploy.
+      - key: DJANGO_SUPERUSER_USERNAME
+        value: admin
+      - key: DJANGO_SUPERUSER_EMAIL
+        value: admin@bereke.local
+      - key: DJANGO_SUPERUSER_PASSWORD
         sync: false
 
 databases:
