@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import date, timedelta, timezone as dt_timezone
 import re
 from unittest.mock import patch
@@ -485,3 +486,51 @@ class AnalyticsTests(TestCase):
         self.assertEqual(period_bounds(3, date(2026, 1, 15)), (date(2025, 11, 1), date(2026, 2, 1)))
         self.assertEqual(period_bounds(1, date(2026, 12, 31)), (date(2026, 12, 1), date(2027, 1, 1)))
         self.assertEqual(period_bounds(12, date(2026, 2, 28)), (date(2025, 3, 1), date(2026, 3, 1)))
+
+
+class EnsureAdminTests(TestCase):
+    """The admin user is created from the environment on every start, without touching an existing password."""
+    def run_command(self, **env):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        with patch.dict(os.environ, {k: v for k, v in env.items()}, clear=False):
+            call_command("ensure_admin", stdout=out)
+        return out.getvalue()
+
+    def setUp(self):
+        for name in ("DJANGO_SUPERUSER_USERNAME", "DJANGO_SUPERUSER_PASSWORD", "DJANGO_SUPERUSER_EMAIL", "DJANGO_ADMIN_RESET_PASSWORD"):
+            os.environ.pop(name, None)
+        self.users = get_user_model()
+
+    def test_creates_the_admin_with_a_working_login(self):
+        output = self.run_command(DJANGO_SUPERUSER_PASSWORD="long-enough-password-1")
+        user = self.users.objects.get(username="admin")
+        self.assertTrue(user.is_staff and user.is_superuser and user.check_password("long-enough-password-1"))
+        self.assertNotIn("long-enough-password-1", output)
+        self.assertTrue(self.client.login(username="admin", password="long-enough-password-1"))
+        self.assertEqual(self.client.get("/admin/").status_code, 200)
+
+    def test_without_a_password_nothing_is_created(self):
+        self.assertIn("not set", self.run_command())
+        self.assertFalse(self.users.objects.filter(username="admin").exists())
+
+    def test_a_short_password_is_refused(self):
+        self.assertIn("at least 12", self.run_command(DJANGO_SUPERUSER_PASSWORD="short"))
+        self.assertFalse(self.users.objects.filter(username="admin").exists())
+
+    def test_existing_password_is_kept_unless_reset_is_requested(self):
+        self.run_command(DJANGO_SUPERUSER_PASSWORD="first-long-password-1")
+        self.run_command(DJANGO_SUPERUSER_PASSWORD="second-long-password-2")
+        self.assertTrue(self.users.objects.get(username="admin").check_password("first-long-password-1"))
+        self.run_command(DJANGO_SUPERUSER_PASSWORD="second-long-password-2", DJANGO_ADMIN_RESET_PASSWORD="1")
+        self.assertTrue(self.users.objects.get(username="admin").check_password("second-long-password-2"))
+
+    def test_a_demoted_admin_gets_access_back_and_the_username_is_configurable(self):
+        self.users.objects.create_user("admin", "a@example.com", "old-password-123456", is_staff=False)
+        self.run_command(DJANGO_SUPERUSER_PASSWORD="first-long-password-1")
+        user = self.users.objects.get(username="admin")
+        self.assertTrue(user.is_staff and user.is_superuser)
+        self.assertTrue(user.check_password("old-password-123456"))
+        self.run_command(DJANGO_SUPERUSER_USERNAME="owner", DJANGO_SUPERUSER_PASSWORD="owner-long-password-1")
+        self.assertTrue(self.users.objects.filter(username="owner", is_superuser=True).exists())
