@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static log %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+{% block coltype %}{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<section class="dash" aria-labelledby="dash-title">
+  <header class="dash-head">
+    <div>
+      <p class="eyebrow">Теңгерім әкімшілігі</p>
+      <h1 id="dash-title">Басқару тақтасы</h1>
+      <p class="dash-sub">Сайттағы қолданушылар мен олардың қаржы деректері бір жерде.</p>
+    </div>
+    {% if site_url %}<a class="btn-main" href="{{ site_url }}">Сайтқа өту</a>{% endif %}
+  </header>
+
+  <div class="dash-grid">
+    <a class="dash-card" href="{% url 'admin:finance_account_changelist' %}">
+      <span class="dash-icon i-blue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.7-3.700 3.200-5.500 6.500-5.500s5.800 1.800 6.500 5.500"/><path d="M16 4.500a3.500 3.500 0 010 7M18.500 14.800c1.800.7 2.800 2.300 3.200 5.200"/></svg></span>
+      <span class="dash-label">Қолданушылар</span>
+      <strong>{{ dashboard.accounts.total }}</strong>
+      <small>{{ dashboard.accounts.verified }} email растаған · {{ dashboard.accounts.week }} жаңа (7 күн)</small>
+    </a>
+    <a class="dash-card" href="{% url 'admin:finance_transaction_changelist' %}">
+      <span class="dash-icon i-green"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+      <span class="dash-label">Осы айдағы кіріс</span>
+      <strong class="up">{{ dashboard.month_income }}</strong>
+      <small>{{ dashboard.month_label }} · {{ dashboard.month_count }} операция</small>
+    </a>
+    <a class="dash-card" href="{% url 'admin:finance_transaction_changelist' %}">
+      <span class="dash-icon i-orange"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/></svg></span>
+      <span class="dash-label">Осы айдағы шығыс</span>
+      <strong class="down">{{ dashboard.month_expense }}</strong>
+      <small>Қалдық: <b class="{% if dashboard.balance_negative %}down{% else %}up{% endif %}">{{ dashboard.month_balance }}</b></small>
+    </a>
+    <a class="dash-card" href="{% url 'admin:finance_subscription_changelist' %}">
+      <span class="dash-icon i-purple"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 013-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 01-3 3H3"/></svg></span>
+      <span class="dash-label">Белсенді жазылымдар</span>
+      <strong>{{ dashboard.subscriptions }}</strong>
+      <small>Айына {{ dashboard.subscriptions_total }}</small>
+    </a>
+    <a class="dash-card" href="{% url 'admin:finance_budget_changelist' %}">
+      <span class="dash-icon i-gold"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></span>
+      <span class="dash-label">Бюджеттер</span>
+      <strong>{{ dashboard.budgets }}</strong>
+      <small>Санат бойынша лимиттер</small>
+    </a>
+  </div>
+
+  <div class="dash-lists">
+    <section class="dash-panel">
+      <header><h2>Соңғы операциялар</h2><a href="{% url 'admin:finance_transaction_changelist' %}">Барлығы</a></header>
+      {% for row in dashboard.recent_transactions %}
+        <a class="dash-row" href="{% url 'admin:finance_transaction_change' row.obj.pk %}">
+          <span class="dash-row-main"><b>{{ row.obj.merchant }}</b><small>{{ row.obj.category }} · {{ row.obj.user.name }} · {{ row.obj.tx_date|date:"d.m.Y" }}</small></span>
+          <span class="amt {% if row.income %}up{% else %}down{% endif %}">{% if row.income %}+{% else %}−{% endif %}{{ row.amount }}</span>
+        </a>
+      {% empty %}<p class="dash-empty">Әзірге операция жоқ.</p>{% endfor %}
+    </section>
+    <section class="dash-panel">
+      <header><h2>Соңғы тіркелгендер</h2><a href="{% url 'admin:finance_account_changelist' %}">Барлығы</a></header>
+      {% for acc in dashboard.recent_accounts %}
+        <a class="dash-row" href="{% url 'admin:finance_account_change' acc.pk %}">
+          <span class="dash-row-main"><b>{{ acc.name }}</b><small>{{ acc.email }}</small></span>
+          <span class="dash-when">{{ acc.created_at|date:"d.m.Y" }}</span>
+        </a>
+      {% empty %}<p class="dash-empty">Әзірге тіркелген қолданушы жоқ.</p>{% endfor %}
+    </section>
+  </div>
+</section>
+
+<div id="content-main" class="dash-apps">
+  <h2 class="dash-apps-title">Барлық бөлімдер</h2>
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+
+<section class="dash-log">
+  <h2>Менің соңғы әрекеттерім</h2>
+  {% get_admin_log 8 as admin_log for_user user %}
+  {% if not admin_log %}
+    <p class="dash-empty">Әзірге әрекет жоқ.</p>
+  {% else %}
+    <ul class="actionlist">
+    {% for entry in admin_log %}
+      <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+        {% if entry.is_deletion or not entry.get_admin_url %}{{ entry.object_repr }}{% else %}<a href="{{ entry.get_admin_url }}">{{ entry.object_repr }}</a>{% endif %}
+        <span class="mini quiet">{% if entry.content_type %}{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}{% endif %}</span>
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

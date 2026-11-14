@@ -1,0 +1,25 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'finance/admin/bereke-admin.css' %}">{% endblock %}
+
+{% block branding %}
+<a class="brand" href="{% url 'admin:index' %}">
+  <img src="{% static 'finance/admin/logo-mark.svg' %}" alt="" width="34" height="34">
+  <span class="brand-name">{{ site_header|default:"Теңгерім" }}</span>
+  <span class="brand-tag">Әкімші</span>
+</a>
+{% endblock %}
+
+{% block welcome-msg %}<span class="who" title="Кірген әкімші">{% firstof user.get_short_name user.get_username %}</span>{% endblock %}
+
+{% block userlinks %}
+  {% if site_url %}<a class="pill" href="{{ site_url }}">Сайтқа өту</a>{% endif %}
+  {% if user.has_usable_password %}<a class="pill" href="{% url 'admin:password_change' %}">Құпиясөзді өзгерту</a>{% endif %}
+  <form id="logout-form" method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit" class="pill">Шығу</button></form>
+  {% include "admin/color_theme_toggle.html" %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
