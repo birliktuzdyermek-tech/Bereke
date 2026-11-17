@@ -657,4 +657,14 @@ def finance_view(request):
                 Subscription.objects.create(user=user, merchant=merchant, monthly_amount=amount,
                                             next_payment=now.date(), status="active", created_at=now)
         return JsonResponse({"ok": True}, status=201)
+    if kind == "seed_recurring":
+        # Example monthly payments so that "likely subscriptions" can be tried on a real account; safe to press twice.
+        with transaction.atomic():
+            if Transaction.objects.filter(user=user, merchant__in=("Netflix", "Yandex Plus")).exists():
+                return fail("Үлгі төлемдер бұрын қосылған")
+            for merchant, amounts in (("Netflix", (3990, 3990, 3990)), ("Yandex Plus", (2490, 1990, 1990))):
+                for index, amount in enumerate(amounts):
+                    Transaction.objects.create(user=user, merchant=merchant, category="Ойын-сауық", amount=amount, type="expense",
+                                               tx_date=(now - timedelta(days=10 + 30 * index)).date(), created_at=now)
+        return JsonResponse({"ok": True}, status=201)
     return fail("Белгісіз әрекет")

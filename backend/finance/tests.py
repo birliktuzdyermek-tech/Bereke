@@ -311,6 +311,17 @@ class TransactionEditingTests(TestCase):
         budgets = {item["category"]: item["spent"] for item in self.client.get("/api/finance").json()["budgets"]}
         self.assertEqual(budgets, {"Азық-түлік": 0, "Көлік": 2200})
 
+    def test_seed_recurring_adds_example_payments_once_for_this_user_only(self):
+        post = lambda client: client.post("/api/finance", data=json.dumps({"kind": "seed_recurring"}), content_type="application/json")
+        self.assertEqual(post(self.client).status_code, 201)
+        rows = Transaction.objects.filter(user=self.user, merchant__in=("Netflix", "Yandex Plus")).order_by("merchant", "tx_date")
+        self.assertEqual(rows.count(), 6)
+        netflix = [row.tx_date for row in rows if row.merchant == "Netflix"]
+        self.assertTrue(all(25 <= (b - a).days <= 35 for a, b in zip(netflix, netflix[1:])))
+        self.assertEqual(post(self.client).status_code, 400)
+        self.assertEqual(Transaction.objects.filter(user=self.user, merchant="Netflix").count(), 3)
+        self.assertFalse(Transaction.objects.exclude(user=self.user).exists())
+
     def test_edit_rejects_other_users_and_invalid_fields(self):
         self.assertEqual(self.patch_item(self.other_client).status_code, 404)
         self.assertEqual(self.patch_item(self.client, amount=-1).status_code, 400)
