@@ -8,6 +8,7 @@ import { categoryColor } from "@/lib/categories";
 import { groupByDay, money } from "@/lib/format";
 import { changePercent, type Analytics } from "@/lib/analytics";
 import type { Sub, Tx } from "@/lib/finance-types";
+import type { Insight } from "@/lib/insights";
 
 const FULL_MONTHS = ["Қаңтар", "Ақпан", "Наурыз", "Сәуір", "Мамыр", "Маусым", "Шілде", "Тамыз", "Қыркүйек", "Қазан", "Қараша", "Желтоқсан"];
 const SHORT_MONTHS = ["қаң", "ақп", "нау", "сәу", "мам", "мау", "шіл", "там", "қыр", "қаз", "қар", "жел"];
@@ -38,7 +39,8 @@ type OverviewProps = {
   period: string;
   activeSubs: Sub[];
   monthlySubs: number;
-  insights: string[];
+  insights: Insight[];
+  insightsReady: boolean;
   canSeed: boolean;
   busy: boolean;
   onSeed: () => void;
@@ -46,13 +48,13 @@ type OverviewProps = {
   onShowSubscriptions: () => void;
 };
 
-export function Overview({ stats, statsError, visible, period, activeSubs, monthlySubs, insights, canSeed, busy, onSeed, onShowTransactions, onShowSubscriptions }: OverviewProps) {
+export function Overview({ stats, statsError, visible, period, activeSubs, monthlySubs, insights, insightsReady, canSeed, busy, onSeed, onShowTransactions, onShowSubscriptions }: OverviewProps) {
   const seed = canSeed && <div className="empty-callout"><strong>Әзірге операция жоқ</strong><p>Өз деректеріңізді енгізіңіз немесе интерфейсті көру үшін үлгі мәліметтерді қосыңыз.</p><button className="text-button" disabled={busy} onClick={onSeed}>Үлгі деректерді қосу</button></div>;
   const recent = groupByDay(visible.slice(0, 6));
   const lower = <div className="ov-grid">
     <section className="panel recent-panel"><div className="panel-heading"><div><p className="eyebrow">СОҢҒЫ ҚОЗҒАЛЫС</p><h2>Соңғы операциялар</h2></div><button className="text-button" onClick={onShowTransactions}>Барлығын көру</button></div>{recent.length ? <div className="tx-list">{recent.map(group => <div key={group.key}><p className="day-label">{group.label}</p>{group.items.map(x => <TransactionRow key={x.id} tx={x}/>)}</div>)}</div> : <p className="empty-small">Бұл кезеңде операция жоқ.</p>}</section>
     <div className="ov-stack">
-      <section className="panel advice-panel"><div className="panel-heading"><div><p className="eyebrow">ЖЕКЕ ТАЛДАУ</p><h2>Үнемдеу кеңестері</h2></div><span className="advice-icon"><Lightbulb size={21}/></span></div><div className="advice-list">{insights.map((tip, i) => <div className="advice-item" key={i}><span className="advice-num">0{i + 1}</span><p>{tip}</p></div>)}</div><p className="advice-foot">Кеңестер сіз енгізген деректерден есептеледі.</p></section>
+      <section className="panel advice-panel"><div className="panel-heading"><div><p className="eyebrow">ЖЕКЕ ТАЛДАУ</p><h2>Үнемдеу кеңестері</h2></div><span className="advice-icon"><Lightbulb size={21}/></span></div><div className="advice-list">{!insightsReady ? <p className="advice-empty" role="status">Ұсыныстар есептелуде…</p> : insights.length ? insights.map(tip => <div className="advice-item" key={tip.ruleCode}><span className="advice-num">{String(insights.indexOf(tip) + 1).padStart(2, "0")}</span><div><p>{tip.message}</p><details className="advice-basis"><summary>Неге осы ұсыныс?</summary><p>{tip.basis}</p>{tip.createdAt && <p>Алғаш есептелген: {tip.createdAt.slice(0, 10)}</p>}</details></div></div>) : <p className="advice-empty">Таңдалған кезеңде ережелер бойынша ұсыныс жоқ. Деректер көбейгенде қайта есептеледі.</p>}</div><p className="advice-foot">Ұсыныстар сіз енгізген деректерден анық ережелермен есептеледі. Бұл қаржылық кеңес емес, ақпараттық көмек.</p></section>
       <section className="panel sub-summary"><div className="panel-heading"><div><p className="eyebrow">ТҰРАҚТЫ ТӨЛЕМДЕР</p><h2>Жазылымдар</h2></div><RefreshCw size={20}/></div><strong className="sub-total">{money(monthlySubs)}<span> / ай</span></strong><p>{activeSubs.length} белсенді жазылым</p><div className="sub-preview">{activeSubs.slice(0, 2).map(x => <div key={x.id}><span className="service-dot">{x.merchant.slice(0, 1)}</span><span>{x.merchant}</span><strong>{money(x.monthlyAmount)}</strong></div>)}</div><button className="text-button" onClick={onShowSubscriptions}>Жазылымдарды басқару</button></section>
     </div>
   </div>;

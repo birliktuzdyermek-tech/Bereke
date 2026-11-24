@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Account, Budget, Card, Subscription, Transaction
+from .models import Account, Budget, Card, CancellationRequest, IgnoredSubscription, Insight, Subscription, Transaction
 
 
 admin.site.site_url = settings.FRONTEND_URL
@@ -201,3 +201,31 @@ class BudgetAdmin(admin.ModelAdmin):
     search_fields = ("category", "user__name", "user__email")
     readonly_fields = ("updated_at",)
     fields = ("user", "category", "monthly_limit", "updated_at")
+
+
+class RequestStatusFilter(ChoiceFilter):
+    title, parameter_name, options = "Күйі", "status", (("requested", "Сұрау тіркелді"), ("completed", "Провайдерде тоқтатылды"), ("withdrawn", "Қайтарылды"))
+
+
+@admin.register(CancellationRequest)
+class CancellationRequestAdmin(admin.ModelAdmin):
+    list_display = ("subscription", "user", "status", "created_at")
+    list_filter = (RequestStatusFilter,)
+    ordering = ("-created_at",)
+    search_help_text = "Жазылым немесе қолданушы бойынша іздеу"
+    search_fields = ("subscription__merchant", "user__email")
+
+
+@admin.register(Insight)
+class InsightAdmin(admin.ModelAdmin):
+    list_display = ("message", "rule_code", "user", "period_start", "period_end", "created_at")
+    list_filter = ("rule_code",)
+    ordering = ("-created_at",)
+    search_fields = ("message", "user__email")
+
+
+@admin.register(IgnoredSubscription)
+class IgnoredSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("key", "user", "created_at")
+    ordering = ("-created_at",)
+    search_fields = ("key", "user__email")

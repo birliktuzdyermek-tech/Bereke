@@ -15,7 +15,7 @@ const GRADIENTS = [
 const gradientFor = (card: Card) => GRADIENTS[card.id % GRADIENTS.length];
 const initials = (name: string) => name.trim().slice(0, 1).toUpperCase();
 
-export function CardsView({ cards, transactions, onAdd }: { cards: Card[]; transactions: Tx[]; onAdd: () => void }) {
+export function CardsView({ cards, transactions, onAdd, onToggle, busy = false }: { cards: Card[]; transactions: Tx[]; onAdd: () => void; onToggle?: (card: Card) => void; busy?: boolean }) {
   const [pickedId, setPickedId] = useState<number | null>(null);
   const selected = cards.find(card => card.id === pickedId) ?? cards[0];
   const now = new Date();
@@ -32,13 +32,13 @@ export function CardsView({ cards, transactions, onAdd }: { cards: Card[]; trans
         <div className="cards-list" role="group" aria-label="Карталар">
           {cards.map(card => <button key={card.id} aria-pressed={card.id === selected.id} className={card.id === selected.id ? "card-pick on" : "card-pick"} onClick={() => setPickedId(card.id)}>
             <span className="card-thumb" style={{ background: gradientFor(card) }}/>
-            <span className="card-pick-text"><strong>{card.bankName}</strong><small>•••• {card.last4}</small></span>
+            <span className="card-pick-text"><strong>{card.bankName}</strong><small>•••• {card.last4}{card.status === "inactive" ? " · белсенді емес" : ""}</small></span>
           </button>)}
           <button className="card-pick add" onClick={onAdd}><span className="card-thumb card-thumb-add"><Plus size={16}/></span><span className="card-pick-text"><strong>Карта белгісін қосу</strong></span></button>
         </div>
         <div className="panel card-detail">
           <div className="card-top">
-            <div className="bank-card" style={{ background: gradientFor(selected) }}>
+            <div className={selected.status === "inactive" ? "bank-card is-inactive" : "bank-card"} style={{ background: gradientFor(selected) }}>
               <div><BrandLogo compact light /><CreditCard size={24}/></div>
               <strong>{selected.bankName}</strong>
               <small>•••• &nbsp; •••• &nbsp; •••• &nbsp; {selected.last4}</small>
@@ -48,6 +48,7 @@ export function CardsView({ cards, transactions, onAdd }: { cards: Card[]; trans
               <strong className="ov-big">{money(spent)}</strong>
               <div className="ov-meter" aria-hidden="true"><span style={{ width: `${share}%` }}/></div>
               <span className="ov-note"><b>{share}%</b> Барлық шығыстағы үлесі</span>
+              {onToggle && <button className="text-button card-status-button" disabled={busy} onClick={() => onToggle(selected)}>{selected.status === "inactive" ? "Картаны қайта белсендіру" : "Картаны белсенді емес деп белгілеу"}</button>}
             </div>
           </div>
           <div className="card-history">
