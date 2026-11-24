@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/api-fetch";
+import { formatKzPhone } from "@/lib/phone";
 import { passwordProblem as checkPassword } from "@/lib/password-validation";
 
 export type AuthMode = "login" | "register";
@@ -136,7 +137,7 @@ export function AuthDialog({ mode, onModeChange, onSuccess }: {
             <label>Email<input type="email" autoComplete="email" required maxLength={254} value={email} onBlur={() => setEmailTouched(true)} onChange={event => { setEmail(event.target.value); setEmailServerError(""); }} aria-invalid={(emailTouched || submitted) && !!emailProblem} aria-describedby="register-email-status" placeholder="name@example.com" />
               {(emailTouched || submitted) && <span id="register-email-status" className={`auth-field-message ${emailProblem ? "invalid" : "valid"}`} role="status">{emailProblem || "Email пішімі дұрыс."}</span>}
             </label>
-            <label>Телефон нөмірі<input type="tel" inputMode="tel" autoComplete="tel" required maxLength={24} value={phone} onChange={event => { setPhone(event.target.value); setError(""); }} placeholder="+77001234567" /></label>
+            <label>Телефон нөмірі<input type="tel" inputMode="tel" autoComplete="tel" required maxLength={24} value={phone} onChange={event => { const next = event.target.value; setPhone(formatKzPhone(next, next.length < phone.length)); setError(""); }} placeholder="+7 (747) 477-47-47" /></label>
           </> : <label>Email немесе телефон<input type="text" autoComplete="username" required maxLength={254} value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="name@example.com / +77001234567" /></label>}
           <label>Құпиясөз<input type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} value={password} onBlur={() => setPasswordTouched(true)} onChange={event => setPassword(event.target.value)} aria-invalid={mode === "register" && (passwordTouched || submitted || !!password) && !!passwordProblem} aria-describedby={mode === "register" ? "register-password-status" : undefined} placeholder={mode === "register" ? "Кемінде 8 таңба" : "Құпиясөз"} />
             {mode === "register" && <span id="register-password-status" className={`auth-field-message ${!(passwordTouched || submitted || password) ? "hint" : passwordProblem ? "invalid" : "valid"}`} role="status">{passwordTouched || submitted || password ? passwordProblem || "Құпиясөз қабылданады." : "Кемінде 8 таңба, әріп, сан және арнайы таңба (!, ?, #) қажет."}</span>}

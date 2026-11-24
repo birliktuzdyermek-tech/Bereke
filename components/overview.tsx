@@ -15,7 +15,7 @@ const SHORT_MONTHS = ["қаң", "ақп", "нау", "сәу", "мам", "мау"
 const monthIndex = (key: string) => Number(key.slice(5, 7)) - 1;
 const delta = (current: number, previous: number) => {
   const value = changePercent(current, previous);
-  return value === null ? "—" : `${value > 0 ? "+" : ""}${value}%`;
+  return value === null ? "" : `${value > 0 ? "+" : ""}${value}%`; // no previous data: show nothing instead of a dash
 };
 
 /** Path of a polyline (and its area) through the running balance, scaled to a width x height box. */
@@ -67,9 +67,11 @@ export function Overview({ stats, statsError, visible, period, activeSubs, month
       {lower}</div>;
   }
 
-  const count = stats.months;
-  const peak = Math.max(1, ...stats.monthly.map(m => Math.max(m.income, m.expense)));
-  const balances = stats.monthly.map(m => m.balance);
+  const firstWithData = stats.monthly.findIndex(m => m.income > 0 || m.expense > 0);
+  const monthly = firstWithData > 0 ? stats.monthly.slice(firstWithData) : stats.monthly; // no empty columns before the first month with data
+  const count = monthly.length;
+  const peak = Math.max(1, ...monthly.map(m => Math.max(m.income, m.expense)));
+  const balances = monthly.map(m => m.balance);
   const hero = trend(balances, 300, 64, 6);
   const flow = trend(balances, 700, 80, 12);
   const kept = stats.income > 0 ? Math.min(100, Math.max(0, Math.round(stats.balance / stats.income * 100))) : null;
@@ -93,16 +95,16 @@ export function Overview({ stats, statsError, visible, period, activeSubs, month
         </svg>
       </section>
       <section className="ov-stat">
-        <span className="ov-stat-icon ov-in"><ArrowDownLeft size={20}/></span>
+        <span className="ov-stat-icon ov-in"><ArrowUpRight size={20}/></span>
         <span className="ov-stat-label">Кіріс</span>
         <strong className="ov-stat-num">{money(stats.income)}</strong>
-        <span className="ov-stat-delta"><b className={incomeDelta.startsWith("-") ? "t-out" : "t-up"}>{incomeDelta}</b> Алдыңғы кезеңмен салыстырғанда</span>
+        {incomeDelta && <span className="ov-stat-delta"><b className={incomeDelta.startsWith("-") ? "t-out" : "t-up"}>{incomeDelta}</b> Алдыңғы кезеңмен салыстырғанда</span>}
       </section>
       <section className="ov-stat">
-        <span className="ov-stat-icon ov-out"><ArrowUpRight size={20}/></span>
+        <span className="ov-stat-icon ov-out"><ArrowDownLeft size={20}/></span>
         <span className="ov-stat-label">Шығыс</span>
         <strong className="ov-stat-num">{money(stats.expense)}</strong>
-        <span className="ov-stat-delta"><b className={expenseDelta.startsWith("-") ? "t-up" : "t-out"}>{expenseDelta}</b> Алдыңғы кезеңмен салыстырғанда</span>
+        {expenseDelta && <span className="ov-stat-delta"><b className={expenseDelta.startsWith("-") ? "t-up" : "t-out"}>{expenseDelta}</b> Алдыңғы кезеңмен салыстырғанда</span>}
       </section>
     </div>
 
@@ -133,7 +135,7 @@ export function Overview({ stats, statsError, visible, period, activeSubs, month
           <path d={flow.line} fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>
         </svg>
         <div className="ov-months" style={{ gridTemplateColumns: `repeat(${count},minmax(0,1fr))` }}>
-          {stats.monthly.map((m, i) => <div key={m.month} className={i === count - 1 ? "ov-month now" : "ov-month"} title={`+${money(m.income)} / −${money(m.expense)}`}>
+          {monthly.map((m, i) => <div key={m.month} className={i === count - 1 ? "ov-month now" : "ov-month"} title={`+${money(m.income)} / −${money(m.expense)}`}>
             <div className="ov-bar-in"><span style={{ height: m.income ? Math.max(3, m.income / peak * 80) : 0 }}/></div>
             <div className="ov-bar-out"><span style={{ height: m.expense ? Math.max(3, m.expense / peak * 60) : 0 }}/></div>
             <small>{SHORT_MONTHS[monthIndex(m.month)]}</small>
@@ -143,8 +145,8 @@ export function Overview({ stats, statsError, visible, period, activeSubs, month
           <summary>Айлар бойынша кесте</summary>
           <div className="table-wrap"><table className="ov-table">
             <thead><tr><th>Ай</th><th className="right">Кіріс</th><th className="right">Шығыс</th><th className="right">Таза</th><th className="right">Қалдық</th></tr></thead>
-            <tbody>{stats.monthly.map(m => <tr key={m.month}><td>{FULL_MONTHS[monthIndex(m.month)]} {m.month.slice(0, 4)}</td><td className="right">{money(m.income)}</td><td className="right">{money(m.expense)}</td><td className="right">{money(m.income - m.expense)}</td><td className="right">{money(m.balance)}</td></tr>)}</tbody>
-            <tfoot><tr><th>Барлығы</th><th className="right">{money(stats.income)}</th><th className="right">{money(stats.expense)}</th><th className="right">{money(stats.balance)}</th><th className="right">{money(stats.monthly[stats.monthly.length - 1].balance)}</th></tr></tfoot>
+            <tbody>{monthly.map(m => <tr key={m.month}><td>{FULL_MONTHS[monthIndex(m.month)]} {m.month.slice(0, 4)}</td><td className="right">{money(m.income)}</td><td className="right">{money(m.expense)}</td><td className="right">{money(m.income - m.expense)}</td><td className="right">{money(m.balance)}</td></tr>)}</tbody>
+            <tfoot><tr><th>Барлығы</th><th className="right">{money(stats.income)}</th><th className="right">{money(stats.expense)}</th><th className="right">{money(stats.balance)}</th><th className="right">{money(monthly[monthly.length - 1].balance)}</th></tr></tfoot>
           </table></div>
         </details>
       </section>

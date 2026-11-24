@@ -90,3 +90,41 @@ html[data-theme="dark"] .cancel-note{background:#2a2f26;border-color:#4b5a3d}htm
 .subscription-grid{align-items:start}
 .bank-card.is-inactive{filter:grayscale(.85);opacity:.7}.card-status-button{margin-top:6px}
 .date-filter{display:grid;gap:3px;font-size:.7rem;font-weight:700;color:#5E6862}.date-filter input{height:40px;border:1px solid #E3E6E0;border-radius:9px;padding:0 10px;background:#fff;color:#16201B;font:inherit;font-size:.82rem}.list-toolbar{flex-wrap:wrap;align-items:end}html[data-theme="dark"] .date-filter,html[data-theme="dark"] .date-filter input{color:#e8f3ee}html[data-theme="dark"] .date-filter input{background:#23373b;border-color:#426164}
+
+/* ---- UI polish ---- */
+/* sidebar stays in view while the page scrolls */
+.sidebar{position:sticky;top:0;height:100vh;min-height:0;overflow-y:auto;align-self:flex-start}
+/* toast instead of a banner that pushes the content down */
+.notice.toast{position:fixed;right:20px;bottom:20px;z-index:80;margin:0;max-width:min(360px,calc(100vw - 32px));align-items:center;gap:14px;background:#16201B;color:#F3F8F5;border:1px solid #2C3A33;border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(10,20,15,.32);font-size:.84rem;animation:toast-in .18s ease-out}
+.notice.toast button{color:#BFD4C9;text-decoration:none;font-size:1.1rem;line-height:1;margin:0}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:850px){.notice.toast{bottom:calc(82px + env(safe-area-inset-bottom,0px));right:12px}}
+@media(prefers-reduced-motion:reduce){.notice.toast{animation:none}}
+html[data-theme="dark"] .notice.toast{background:#0b1418;border-color:#355055;color:#E8F3EE}
+/* amounts line up under each other */
+td.right,td .tx-amount,.tx-amount,.ov-legend-val b,.sub-price,.subscription-footer strong{font-variant-numeric:tabular-nums}
+table td.right,table th.right{text-align:right!important;white-space:nowrap}
+/* income = green and up, expense = red and down, the same colours in the chart */
+.c-in,.ov-bar-in span{background:#1E6B4A}.c-out,.ov-bar-out span{background:#C53D3D}
+.ov-bar-in span{background:#A9CDB9}.ov-bar-out span{background:#EBB1AB}
+.ov-month.now .ov-bar-in span{background:#1E6B4A}.ov-month.now .ov-bar-out span{background:#C53D3D}
+.ov-in{background:#E3EFE8;color:#1E6B4A}.ov-out{background:#FBE7E4;color:#B3302B}
+.t-out{color:#C53D3D}
+.ov-line path{stroke:#3A4A6B}.ov-key-line{background:#3A4A6B}.ov-fill-top,.ov-fill-bottom{stop-color:#3A4A6B}
+html[data-theme="dark"] .c-in{background:#4FB985}html[data-theme="dark"] .c-out{background:#E8756B}
+html[data-theme="dark"] .ov-bar-in span{background:#2C5A44}html[data-theme="dark"] .ov-bar-out span{background:#6E3A36}
+html[data-theme="dark"] .ov-month.now .ov-bar-in span{background:#4FB985}html[data-theme="dark"] .ov-month.now .ov-bar-out span{background:#E8756B}
+html[data-theme="dark"] .ov-in{background:#1F3A2E;color:#7FD1A4}html[data-theme="dark"] .ov-out{background:#4A2623;color:#F29A93}
+html[data-theme="dark"] .t-out{color:#F29A93}
+html[data-theme="dark"] .ov-line path{stroke:#8FA6D6}html[data-theme="dark"] .ov-key-line{background:#8FA6D6}html[data-theme="dark"] .ov-fill-top,html[data-theme="dark"] .ov-fill-bottom{stop-color:#8FA6D6}
+/* subscriptions */
+.sub-price{margin:0!important;font-size:1.55rem!important;font-weight:700;letter-spacing:-.04em;color:#16201B!important}.sub-price small{font-size:.76rem;font-weight:500;letter-spacing:0;color:#5E6862}
+.subscription-footer{justify-content:flex-start}
+html[data-theme="dark"] .sub-price{color:#E8F3EE!important}
+/* budgets */
+.budget-card-heading{display:flex;align-items:center;justify-content:flex-start;gap:10px}.budget-card-heading h2{margin:0}
+.danger-button{display:inline-flex;align-items:center;gap:6px;margin-left:auto;background:transparent;border:1px solid #E8B7B2;color:#B3302B;border-radius:10px;padding:0 13px;height:38px;font-size:.82rem;font-weight:700}.danger-button:hover{background:#FBE7E4}
+html[data-theme="dark"] .danger-button{border-color:#7A3C37;color:#F29A93}html[data-theme="dark"] .danger-button:hover{background:#4A2623}
+/* locked profile fields */
+.locked-wrap{position:relative;display:block}.locked-wrap input{width:100%;padding-right:36px!important;background:#F2F4F0!important;color:#5E6862!important;border-style:dashed!important;cursor:not-allowed;-webkit-text-fill-color:#5E6862}.locked-wrap svg{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#8A948C;pointer-events:none}
+html[data-theme="dark"] .locked-wrap input{background:#1c2c31!important;color:#9db6ae!important;-webkit-text-fill-color:#9db6ae}

@@ -10,7 +10,7 @@ type Props = { candidates: Candidate[]; busy: boolean; onConfirm: (item: Candida
 export function SubscriptionSuggestions({ candidates, busy, onConfirm, onIgnore, onSeed, ignoredCount = 0, onRestore }: Props) {
   return <section className="panel suggest-panel" aria-label="Ықтимал жазылымдар">
     <div className="panel-heading"><div><p className="eyebrow">АВТОМАТТЫ ТАЛДАУ</p><h2>Ықтимал жазылымдар</h2></div><span className="advice-icon"><Sparkles size={20}/></span></div>
-    <p className="suggest-lead">Операцияларыңыздан ай сайын қайталанатын төлемдер табылды. Бұл — болжам: бірдей төлем әрдайым жазылым емес, сондықтан қолданушы растамайынша ешнәрсе сақталмайды.</p>
+    <p className="suggest-lead">{candidates.length ? "Операцияларыңыздан ай сайын қайталанатын төлемдер табылды. " : "Операцияларыңыздан ай сайын қайталанатын төлемдерді іздейміз. "}Бұл — болжам: бірдей төлем әрдайым жазылым емес, сондықтан сіз растамайынша ештеңе сақталмайды.</p>
     {candidates.length ? <div className="suggest-list">{candidates.map(item => <article className="suggest-item" key={item.key}>
       <span className="service-dot large">{item.merchant.slice(0, 1).toUpperCase()}</span>
       <div className="suggest-body">
@@ -26,7 +26,7 @@ export function SubscriptionSuggestions({ candidates, busy, onConfirm, onIgnore,
           <button className="text-button" disabled={busy} onClick={() => onIgnore(item)}><EyeOff size={14}/> Елемеу</button>
         </div>
       </div>
-    </article>)}</div> : <p className="empty-small">Қазір қайталанатын төлем табылмады. Жаңа операциялар қосылғанда талдау қайта жүргізіледі.</p>}
+    </article>)}</div> : <p className="empty-small">Әзірге ай сайын қайталанатын төлем табылған жоқ. Жаңа операциялар қосылғанда іздеу қайта жүргізіледі.</p>}
     {!candidates.length && onSeed && <button className="text-button" disabled={busy} onClick={onSeed}>Үлгі қайталанатын төлемдерді қосу (Netflix, Yandex Plus)</button>}
     {ignoredCount > 0 && onRestore && <button className="text-button" disabled={busy} onClick={onRestore}>Елеген сатушыларды қайта көрсету ({ignoredCount})</button>}
     <details className="suggest-rules"><summary>Қалай анықталады және келесі күн қалай есептеледі?</summary>
