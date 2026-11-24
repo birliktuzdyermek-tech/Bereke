@@ -51,6 +51,7 @@ class Card(models.Model):
     user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE, verbose_name="Қолданушы")
     bank_name = models.CharField("Банк немесе карта атауы", max_length=50)
     last4 = models.CharField("Соңғы 4 сан", max_length=4)
+    status = models.CharField("Күйі", max_length=8, choices=(("active", "Белсенді"), ("inactive", "Белсенді емес")), default="active")
     created_at = models.DateTimeField("Қосылған уақыты")
 
     class Meta:
@@ -150,3 +151,19 @@ class Insight(models.Model):
 
     def __str__(self):
         return self.message
+
+
+class IgnoredSubscription(models.Model):
+    """A seller the user chose not to see among "likely subscriptions" any more (normalised name)."""
+    user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE, verbose_name="Қолданушы")
+    key = models.CharField("Сатушы (қалыпқа келтірілген)", max_length=80)
+    created_at = models.DateTimeField("Елеген уақыты")
+
+    class Meta:
+        db_table = "ignored_subscriptions"
+        verbose_name = "елеген сатушы"
+        verbose_name_plural = "Елеген сатушылар"
+        constraints = [models.UniqueConstraint(fields=["user", "key"], name="unique_ignored_user_key")]
+
+    def __str__(self):
+        return self.key

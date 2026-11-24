@@ -4,10 +4,10 @@ import { AlertTriangle, CalendarClock, Check, EyeOff, Sparkles } from "lucide-re
 import { money, shortDate } from "@/lib/format";
 import { AMOUNT_TOLERANCE, MONTH_DAYS, type Candidate } from "@/lib/recurring";
 
-type Props = { candidates: Candidate[]; busy: boolean; onConfirm: (item: Candidate) => void; onIgnore: (item: Candidate) => void; onSeed?: () => void };
+type Props = { candidates: Candidate[]; busy: boolean; onConfirm: (item: Candidate) => void; onIgnore: (item: Candidate) => void; onSeed?: () => void; ignoredCount?: number; onRestore?: () => void };
 
 /** Likely subscriptions found in the user's own expenses. Nothing is saved until the user confirms. */
-export function SubscriptionSuggestions({ candidates, busy, onConfirm, onIgnore, onSeed }: Props) {
+export function SubscriptionSuggestions({ candidates, busy, onConfirm, onIgnore, onSeed, ignoredCount = 0, onRestore }: Props) {
   return <section className="panel suggest-panel" aria-label="Ықтимал жазылымдар">
     <div className="panel-heading"><div><p className="eyebrow">АВТОМАТТЫ ТАЛДАУ</p><h2>Ықтимал жазылымдар</h2></div><span className="advice-icon"><Sparkles size={20}/></span></div>
     <p className="suggest-lead">Операцияларыңыздан ай сайын қайталанатын төлемдер табылды. Бұл — болжам: бірдей төлем әрдайым жазылым емес, сондықтан қолданушы растамайынша ешнәрсе сақталмайды.</p>
@@ -28,6 +28,7 @@ export function SubscriptionSuggestions({ candidates, busy, onConfirm, onIgnore,
       </div>
     </article>)}</div> : <p className="empty-small">Қазір қайталанатын төлем табылмады. Жаңа операциялар қосылғанда талдау қайта жүргізіледі.</p>}
     {!candidates.length && onSeed && <button className="text-button" disabled={busy} onClick={onSeed}>Үлгі қайталанатын төлемдерді қосу (Netflix, Yandex Plus)</button>}
+    {ignoredCount > 0 && onRestore && <button className="text-button" disabled={busy} onClick={onRestore}>Елеген сатушыларды қайта көрсету ({ignoredCount})</button>}
     <details className="suggest-rules"><summary>Қалай анықталады және келесі күн қалай есептеледі?</summary>
       <ol>
         <li>Тек шығыс операциялар алынады, сатушы атауы қалыпқа келтіріледі (әріпке дейін кішірейтіледі, сандар мен таңбалар алынады): «NETFLIX *4421» мен «Netflix» бір сатушы.</li>

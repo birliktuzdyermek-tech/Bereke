@@ -26,7 +26,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils import timezone as django_timezone
 
 from .insights import build_insights
-from .models import Account, Budget, Card, CancellationRequest, EmailChallenge, Insight, LoginSession, Subscription, Transaction
+from .models import Account, Budget, Card, CancellationRequest, EmailChallenge, IgnoredSubscription, Insight, LoginSession, Subscription, Transaction
 
 SESSION_COOKIE = "bereke_session"
 SESSION_AGE = 30 * 24 * 60 * 60
@@ -434,8 +434,17 @@ def clean(value, maximum=80):
     return value.strip()[:maximum] if isinstance(value, str) else ""
 
 
+INCOME_CATEGORIES = ("Жалақы", "Қосымша табыс", "Сыйлық", "Басқа")
+EXPENSE_CATEGORIES = ("Азық-түлік", "Көлік", "Тамақтану", "Тұрғын үй", "Денсаулық", "Ойын-сауық", "Білім", "Сауда", "Басқа")
+
+
+def category_matches_type(category, tx_type):
+    """The category must belong to the transaction type: an income cannot be filed under "Көлік", an expense under "Жалақы"."""
+    return category in (INCOME_CATEGORIES if tx_type == "income" else EXPENSE_CATEGORIES)
+
+
 def card_json(card):
-    return {"id": card.id, "userId": card.user_id, "bankName": card.bank_name, "last4": card.last4, "createdAt": card.created_at.isoformat()}
+    return {"id": card.id, "userId": card.user_id, "bankName": card.bank_name, "last4": card.last4, "status": card.status, "createdAt": card.created_at.isoformat()}
 
 
 def tx_json(item):
@@ -599,6 +608,7 @@ def finance_view(request):
             "transactions": [tx_json(item) for item in Transaction.objects.filter(user=user).order_by("-tx_date", "-id")[:500]],
             "subscriptions": [sub_json(item) for item in Subscription.objects.filter(user=user).order_by("-id")[:100]],
             "cards": [card_json(item) for item in Card.objects.filter(user=user).order_by("-id")[:50]],
+            "ignoredSubscriptions": list(IgnoredSubscription.objects.filter(user=user).values_list("key", flat=True)),
             "cancellations": [cancellation_json(item) for item in CancellationRequest.objects.filter(user=user).order_by("-id")[:200]],
             "budgets": budgets_for_user(user)})
     if request.method == "DELETE":
@@ -625,6 +635,8 @@ def finance_view(request):
             tx_type = body.get("type")
             if not merchant or not category or not amount or not tx_date or tx_type not in ("income", "expense"):
                 return fail("Операция деректерін тексеріңіз")
+            if not category_matches_type(category, tx_type):
+                return fail("Санат операция түріне сәйкес келмейді")
             card = None
             if body.get("cardId") not in (None, ""):
                 try:
@@ -641,6 +653,15 @@ def finance_view(request):
             item.card = card
             item.save(update_fields=["merchant", "category", "amount", "type", "tx_date", "card"])
             return JsonResponse({"item": tx_json(item)})
+        if body.get("kind") == "card":
+            card_item = Card.objects.filter(id=item_id, user=user).first()
+            if not card_item:
+                return fail("Карта табылмады", 404)
+            if body.get("status") not in ("active", "inactive"):
+                return fail("Карта күйі қате")
+            card_item.status = body["status"]
+            card_item.save(update_fields=["status"])
+            return JsonResponse({"item": card_json(card_item)})
         if body.get("kind") == "cancellation":
             status = body.get("status")
             item = CancellationRequest.objects.select_related("subscription").filter(id=item_id, user=user).first()
@@ -674,6 +695,8 @@ def finance_view(request):
         tx_type = body.get("type")
         if not merchant or not category or not amount or not tx_date or tx_type not in ("income", "expense"):
             return fail("Операция деректерін тексеріңіз")
+        if not category_matches_type(category, tx_type):
+            return fail("Санат операция түріне сәйкес келмейді")
         card = None
         if body.get("cardId") not in (None, ""):
             try:
@@ -693,6 +716,15 @@ def finance_view(request):
         item = Subscription.objects.create(user=user, merchant=merchant, monthly_amount=amount,
                                            next_payment=payment, status="active", created_at=now)
         return JsonResponse({"item": sub_json(item)}, status=201)
+    if kind in ("ignore_subscription", "unignore_subscription"):
+        key = clean(body.get("key"), 80).lower()
+        if not key:
+            return fail("Сатушы атауы қате")
+        if kind == "ignore_subscription":
+            IgnoredSubscription.objects.get_or_create(user=user, key=key, defaults={"created_at": now})
+        else:
+            IgnoredSubscription.objects.filter(user=user, key=key).delete()
+        return JsonResponse({"ok": True}, status=201 if kind == "ignore_subscription" else 200)
     if kind == "cancellation":
         try:
             subscription = Subscription.objects.filter(id=int(body.get("subscriptionId")), user=user).first()

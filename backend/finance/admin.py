@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import Account, Budget, Card, CancellationRequest, Insight, Subscription, Transaction
+from .models import Account, Budget, Card, CancellationRequest, IgnoredSubscription, Insight, Subscription, Transaction
 
 
 admin.site.site_url = settings.FRONTEND_URL
@@ -222,3 +222,10 @@ class InsightAdmin(admin.ModelAdmin):
     list_filter = ("rule_code",)
     ordering = ("-created_at",)
     search_fields = ("message", "user__email")
+
+
+@admin.register(IgnoredSubscription)
+class IgnoredSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("key", "user", "created_at")
+    ordering = ("-created_at",)
+    search_fields = ("key", "user__email")

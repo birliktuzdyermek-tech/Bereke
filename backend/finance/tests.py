@@ -14,7 +14,7 @@ from django.test.utils import override_settings
 from django.utils import timezone
 
 from .insights import build_insights
-from .models import Account, Budget, Card, CancellationRequest, EmailChallenge, Insight, Subscription, Transaction
+from .models import Account, Budget, Card, CancellationRequest, EmailChallenge, IgnoredSubscription, Insight, Subscription, Transaction
 
 
 def confirm_last_code(client, challenge_id):
@@ -573,7 +573,7 @@ class AdminDesignTests(TestCase):
         apps = [app["app_label"] for app in self.client.get("/admin/").context["app_list"]]
         self.assertEqual(apps[:2], ["finance", "auth"])
         models = [m["object_name"] for m in self.client.get("/admin/").context["app_list"][0]["models"]]
-        self.assertEqual(models, ["Account", "Transaction", "Card", "Subscription", "CancellationRequest", "Budget", "Insight"])
+        self.assertEqual(models, ["Account", "Transaction", "Card", "Subscription", "CancellationRequest", "Budget", "Insight", "IgnoredSubscription"])
 
     def test_transaction_list_shows_badges_signed_amounts_and_kazakh_filters(self):
         response = self.client.get("/admin/finance/transaction/")
@@ -740,3 +740,142 @@ class InsightsApiTests(TestCase):
         other_tips = self.other.get("/api/insights?months=1").json()["items"]
         self.assertTrue(all("Тұрғын" not in item["message"] for item in other_tips))
         self.assertEqual(Insight.objects.filter(user=self.user).exclude(user=self.user).count(), 0)
+
+
+class ClosedGapsTests(TestCase):
+    """Category/type check, card status, server-side ignore list and the admin login throttle."""
+    def setUp(self):
+        cache.clear()
+        self.client, self.user = login_client("gaps@example.com", "+77001230031")
+        self.other, self.other_user = login_client("gaps2@example.com", "+77001230032")
+
+    def send(self, client, method, body):
+        return getattr(client, method)("/api/finance", data=json.dumps(body), content_type="application/json")
+
+    def tx(self, **changes):
+        body = {"kind": "transaction", "merchant": "Test", "category": "Азық-түлік", "amount": 1000, "type": "expense",
+                "txDate": timezone.localdate().isoformat(), "cardId": None}
+        body.update(changes)
+        return body
+
+    def test_category_must_match_the_transaction_type(self):
+        self.assertEqual(self.send(self.client, "post", self.tx()).status_code, 201)
+        self.assertEqual(self.send(self.client, "post", self.tx(type="income", category="Жалақы")).status_code, 201)
+        self.assertEqual(self.send(self.client, "post", self.tx(type="income", category="Көлік")).status_code, 400)
+        self.assertEqual(self.send(self.client, "post", self.tx(type="expense", category="Жалақы")).status_code, 400)
+        self.assertEqual(self.send(self.client, "post", self.tx(category="Ойлап тапқан санат")).status_code, 400)
+        item = Transaction.objects.filter(user=self.user).first()
+        edit = self.tx(id=item.id, type="income", category="Көлік")
+        self.assertEqual(self.send(self.client, "patch", edit).status_code, 400)
+        item.refresh_from_db()
+        self.assertEqual((item.type, item.category), ("expense", "Азық-түлік"))
+
+    def test_card_status_can_be_changed_by_the_owner_only(self):
+        card = Card.objects.create(user=self.user, bank_name="Test", last4="1234", created_at=timezone.now())
+        self.assertEqual(self.client.get("/api/finance").json()["cards"][0]["status"], "active")
+        self.assertEqual(self.send(self.other, "patch", {"kind": "card", "id": card.id, "status": "inactive"}).status_code, 404)
+        self.assertEqual(self.send(self.client, "patch", {"kind": "card", "id": card.id, "status": "bogus"}).status_code, 400)
+        response = self.send(self.client, "patch", {"kind": "card", "id": card.id, "status": "inactive"})
+        self.assertEqual((response.status_code, response.json()["item"]["status"]), (200, "inactive"))
+        card.refresh_from_db()
+        self.assertEqual(card.status, "inactive")
+
+    def test_ignored_sellers_are_stored_per_user_and_can_be_restored(self):
+        self.assertEqual(self.send(self.client, "post", {"kind": "ignore_subscription", "key": "Netflix"}).status_code, 201)
+        self.assertEqual(self.send(self.client, "post", {"kind": "ignore_subscription", "key": "netflix"}).status_code, 201)
+        self.assertEqual(IgnoredSubscription.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(self.client.get("/api/finance").json()["ignoredSubscriptions"], ["netflix"])
+        self.assertEqual(self.other.get("/api/finance").json()["ignoredSubscriptions"], [])
+        self.assertEqual(self.send(self.client, "post", {"kind": "ignore_subscription", "key": "  "}).status_code, 400)
+        self.assertEqual(self.send(self.other, "post", {"kind": "unignore_subscription", "key": "netflix"}).status_code, 200)
+        self.assertEqual(IgnoredSubscription.objects.filter(user=self.user).count(), 1)  # someone else's restore changes nothing
+        self.assertEqual(self.send(self.client, "post", {"kind": "unignore_subscription", "key": "netflix"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/finance").json()["ignoredSubscriptions"], [])
+
+    def test_admin_login_attempts_are_limited(self):
+        statuses = [Client().post("/admin/login/", {"username": "nobody", "password": "wrong"}).status_code for _ in range(12)]
+        self.assertEqual(statuses[:10].count(429), 0)
+        self.assertEqual(statuses[10:], [429, 429])
+
+
+class SecurityScenarioTests(TestCase):
+    """Negative scenarios of the 14th lesson: injection, XSS payloads, foreign ids, CSRF, sessions, password storage."""
+    def setUp(self):
+        cache.clear()
+        self.client, self.user = login_client("sec@example.com", "+77001230041")
+        self.other, self.other_user = login_client("sec2@example.com", "+77001230042")
+
+    def post(self, client, body):
+        return client.post("/api/finance", data=json.dumps(body), content_type="application/json")
+
+    def tx(self, **changes):
+        body = {"kind": "transaction", "merchant": "Test", "category": "Азық-түлік", "amount": 1000, "type": "expense",
+                "txDate": timezone.localdate().isoformat(), "cardId": None}
+        body.update(changes)
+        return body
+
+    def test_sql_injection_text_is_stored_as_plain_text(self):
+        payload = "x'); DROP TABLE transactions; --"
+        self.assertEqual(self.post(self.client, self.tx(merchant=payload)).status_code, 201)
+        self.assertEqual(Transaction.objects.filter(user=self.user, merchant=payload).count(), 1)
+        self.assertEqual(self.client.get("/api/analytics?months=3' OR '1'='1").status_code, 400)
+        self.assertEqual(self.client.get("/api/finance?id=1 OR 1=1").status_code, 200)
+        self.assertEqual(self.client.delete("/api/finance?id=1 OR 1=1").status_code, 400)
+        self.assertTrue(Transaction.objects.filter(user=self.user).exists())
+
+    def test_html_payload_comes_back_as_json_text_with_nosniff(self):
+        payload = "<script>alert(1)</script>"
+        self.post(self.client, self.tx(merchant=payload))
+        response = self.client.get("/api/finance")
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.json()["transactions"][0]["merchant"], payload)  # escaped later by React when rendered
+
+    def test_foreign_user_id_in_the_body_is_ignored(self):
+        response = self.post(self.client, self.tx(userId=self.other_user.id, user_id=self.other_user.id))
+        self.assertEqual(response.status_code, 201)
+        item = Transaction.objects.get(id=response.json()["item"]["id"])
+        self.assertEqual(item.user_id, self.user.id)
+        self.assertEqual(Transaction.objects.filter(user=self.other_user).count(), 0)
+
+    def test_other_users_records_cannot_be_read_changed_or_deleted(self):
+        item = Transaction.objects.create(user=self.user, merchant="Mine", category="Көлік", amount=500, type="expense",
+                                          tx_date=timezone.localdate(), created_at=timezone.now())
+        self.assertEqual(self.other.get("/api/finance").json()["transactions"], [])
+        self.assertEqual(self.other.delete(f"/api/finance?id={item.id}").status_code, 404)
+        change = self.tx(id=item.id, merchant="Hacked")
+        self.assertEqual(self.other.patch("/api/finance", data=json.dumps(change), content_type="application/json").status_code, 404)
+        item.refresh_from_db()
+        self.assertEqual(item.merchant, "Mine")
+
+    def test_unauthenticated_requests_are_rejected_everywhere(self):
+        anonymous = Client()
+        for path in ("/api/finance", "/api/analytics?months=3", "/api/insights?months=3", "/api/budgets"):
+            self.assertEqual(anonymous.get(path).status_code, 401, path)
+        self.assertEqual(anonymous.post("/api/finance", data=json.dumps(self.tx()), content_type="application/json").status_code, 401)
+        self.assertEqual(anonymous.patch("/api/profile", data=json.dumps({"name": "Hacker"}), content_type="application/json").status_code, 401)
+
+    def test_post_without_csrf_token_is_refused(self):
+        strict = Client(enforce_csrf_checks=True)
+        strict.cookies.update(self.client.cookies)  # same signed-in session, but CSRF is now enforced
+        token = strict.get("/api/auth").cookies["csrftoken"].value
+        body = json.dumps(self.tx())
+        self.assertEqual(strict.post("/api/finance", data=body, content_type="application/json").status_code, 403)
+        self.assertEqual(strict.post("/api/finance", data=body, content_type="application/json", HTTP_X_CSRFTOKEN="wrong-token").status_code, 403)
+        self.assertEqual(strict.post("/api/finance", data=body, content_type="application/json", HTTP_X_CSRFTOKEN=token).status_code, 201)
+        self.assertEqual(strict.delete("/api/auth").status_code, 403)
+
+    def test_logout_ends_the_session_and_the_old_cookie_stops_working(self):
+        old_cookie = self.client.cookies["bereke_session"].value
+        self.assertEqual(self.client.get("/api/finance").status_code, 200)
+        self.assertEqual(self.client.delete("/api/auth").status_code, 200)
+        self.assertEqual(self.client.get("/api/finance").status_code, 401)
+        replay = Client()
+        replay.cookies["bereke_session"] = old_cookie
+        self.assertEqual(replay.get("/api/finance").status_code, 401)
+
+    def test_password_is_stored_as_a_hash_and_never_returned(self):
+        self.assertNotIn("secure-password-123", self.user.password_hash)
+        self.assertTrue(self.user.password_hash.startswith(("pbkdf2_", "argon2", "bcrypt")))
+        self.assertNotIn("password", json.dumps(self.client.get("/api/auth").json()).lower())
+        self.assertNotIn("hash", json.dumps(self.client.get("/api/finance").json()).lower())

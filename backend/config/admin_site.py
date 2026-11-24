@@ -15,7 +15,7 @@ class BerekeAdminSite(admin.AdminSite):
     site_title = "Теңгерім әкімшілігі"
     index_title = "Басқару тақтасы"
     APP_ORDER = {"finance": 0, "auth": 1}
-    MODEL_ORDER = ("account", "transaction", "card", "subscription", "cancellationrequest", "budget", "insight")
+    MODEL_ORDER = ("account", "transaction", "card", "subscription", "cancellationrequest", "budget", "insight", "ignoredsubscription")
 
     def get_app_list(self, request, app_label=None):
         apps = super().get_app_list(request, app_label)
