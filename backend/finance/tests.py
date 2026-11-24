@@ -13,7 +13,8 @@ from django.test import Client
 from django.test.utils import override_settings
 from django.utils import timezone
 
-from .models import Account, Budget, Card, EmailChallenge, Transaction
+from .insights import build_insights
+from .models import Account, Budget, Card, CancellationRequest, EmailChallenge, Insight, Subscription, Transaction
 
 
 def confirm_last_code(client, challenge_id):
@@ -572,7 +573,7 @@ class AdminDesignTests(TestCase):
         apps = [app["app_label"] for app in self.client.get("/admin/").context["app_list"]]
         self.assertEqual(apps[:2], ["finance", "auth"])
         models = [m["object_name"] for m in self.client.get("/admin/").context["app_list"][0]["models"]]
-        self.assertEqual(models, ["Account", "Transaction", "Card", "Subscription", "Budget"])
+        self.assertEqual(models, ["Account", "Transaction", "Card", "Subscription", "CancellationRequest", "Budget", "Insight"])
 
     def test_transaction_list_shows_badges_signed_amounts_and_kazakh_filters(self):
         response = self.client.get("/admin/finance/transaction/")
@@ -601,3 +602,141 @@ class AdminDesignTests(TestCase):
         home = self.client.force_login(self.admin_user) or self.client.get("/admin/")
         self.assertContains(home, "Сайтқа өту")
         self.assertContains(home, "logo-mark.svg")
+
+
+def login_client(email, phone):
+    client = Client()
+    response = client.post("/api/auth", data=json.dumps({"action": "register", "name": "Test User", "email": email,
+        "phone": phone, "password": "secure-password-123"}), content_type="application/json")
+    confirm_last_code(client, response.json()["challengeId"])
+    return client, Account.objects.get(email=email)
+
+
+class CancellationRequestTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client, self.user = login_client("owner@example.com", "+77001230011")
+        self.other, self.other_user = login_client("other@example.com", "+77001230012")
+        self.sub = Subscription.objects.create(user=self.user, merchant="Netflix", monthly_amount=3990,
+                                               next_payment=timezone.localdate(), status="active", created_at=timezone.now())
+
+    def post(self, client, body):
+        return client.post("/api/finance", data=json.dumps(body), content_type="application/json")
+
+    def patch(self, client, body):
+        return client.patch("/api/finance", data=json.dumps(body), content_type="application/json")
+
+    def test_request_is_saved_but_does_not_cancel_anything(self):
+        response = self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["item"]["status"], "requested")
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, "active")  # the app cannot stop a real payment
+        listed = self.client.get("/api/finance").json()["cancellations"]
+        self.assertEqual([(row["subscriptionId"], row["status"]) for row in listed], [(self.sub.id, "requested")])
+
+    def test_request_only_for_own_active_subscription_and_only_once(self):
+        self.assertEqual(self.post(self.other, {"kind": "cancellation", "subscriptionId": self.sub.id}).status_code, 404)
+        self.assertEqual(self.post(self.client, {"kind": "cancellation", "subscriptionId": "abc"}).status_code, 400)
+        self.assertEqual(self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id}).status_code, 201)
+        self.assertEqual(self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id}).status_code, 400)
+        self.assertEqual(CancellationRequest.objects.count(), 1)
+        self.assertEqual(self.other.get("/api/finance").json()["cancellations"], [])
+        stopped = Subscription.objects.create(user=self.user, merchant="Old", monthly_amount=1000, next_payment=timezone.localdate(),
+                                              status="cancelled", created_at=timezone.now())
+        self.assertEqual(self.post(self.client, {"kind": "cancellation", "subscriptionId": stopped.id}).status_code, 400)
+
+    def test_status_changes_follow_the_allowed_flow(self):
+        item_id = self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id}).json()["item"]["id"]
+        self.assertEqual(self.patch(self.other, {"kind": "cancellation", "id": item_id, "status": "completed"}).status_code, 404)
+        self.assertEqual(self.patch(self.client, {"kind": "cancellation", "id": item_id, "status": "bogus"}).status_code, 400)
+        done = self.patch(self.client, {"kind": "cancellation", "id": item_id, "status": "completed"})
+        self.assertEqual((done.status_code, done.json()["item"]["status"], done.json()["subscription"]["status"]), (200, "completed", "cancelled"))
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, "cancelled")
+        self.assertEqual(self.patch(self.client, {"kind": "cancellation", "id": item_id, "status": "withdrawn"}).status_code, 400)
+
+    def test_withdrawn_request_leaves_subscription_active_and_allows_a_new_request(self):
+        item_id = self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id}).json()["item"]["id"]
+        self.assertEqual(self.patch(self.client, {"kind": "cancellation", "id": item_id, "status": "withdrawn"}).status_code, 200)
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.status, "active")
+        self.assertEqual(self.post(self.client, {"kind": "cancellation", "subscriptionId": self.sub.id}).status_code, 201)
+
+
+class InsightRuleTests(TestCase):
+    """Same cases as lib/insights.test.ts."""
+    def stats(self, **changes):
+        base = {"months": 3, "from": "2026-09-01", "to": "2026-11-30", "income": 0, "expense": 0, "balance": 0,
+                "previous": {"income": 0, "expense": 0}, "categories": []}
+        base.update(changes)
+        return base
+
+    def codes(self, stats, subs=0):
+        return [tip["ruleCode"] for tip in build_insights(stats, subs)]
+
+    def test_nothing_to_say_without_data(self):
+        self.assertEqual(self.codes(self.stats()), [])
+
+    def test_category_share_threshold_is_forty_percent(self):
+        below = self.stats(expense=1000, income=5000, balance=4000, categories=[{"category": "Көлік", "total": 399}])
+        at = self.stats(expense=1000, income=5000, balance=4000, categories=[{"category": "Көлік", "total": 400}])
+        self.assertEqual(self.codes(below), [])
+        tips = build_insights(at, 0)
+        self.assertEqual([tip["ruleCode"] for tip in tips], ["category_share"])
+        self.assertIn("40%", tips[0]["message"])
+        self.assertIn("2026-09-01 — 2026-11-30", tips[0]["basis"])
+        self.assertEqual((tips[0]["periodStart"], tips[0]["periodEnd"]), ("2026-09-01", "2026-11-30"))
+
+    def test_growth_needs_a_previous_period_and_twenty_percent(self):
+        grown = self.stats(expense=1200, income=9000, balance=7800, previous={"income": 0, "expense": 1000})
+        self.assertEqual(self.codes(grown), ["expense_growth"])
+        self.assertEqual(self.codes(self.stats(expense=1199, income=9000, balance=7801, previous={"income": 0, "expense": 1000})), [])
+        self.assertEqual(self.codes(self.stats(expense=5000, income=9000, balance=4000, previous={"income": 0, "expense": 0})), [])
+
+    def test_subscription_load_uses_average_monthly_expense(self):
+        stats = self.stats(months=3, expense=30000, income=900000, balance=870000)  # average 10 000 / month
+        self.assertEqual(self.codes(stats, 1000), ["subscription_load"])  # exactly 10 %
+        self.assertEqual(self.codes(stats, 999), [])
+        self.assertEqual(self.codes(stats, 0), [])
+
+    def test_low_savings_below_ten_percent_of_income(self):
+        self.assertEqual(self.codes(self.stats(income=1000, expense=901, balance=99)), ["low_savings"])
+        self.assertEqual(self.codes(self.stats(income=1000, expense=900, balance=100)), [])
+        tips = build_insights(self.stats(income=1000, expense=1500, balance=-500), 0)
+        self.assertIn("0%", tips[0]["message"])
+        self.assertEqual(self.codes(self.stats(income=0, expense=100, balance=-100)), [])
+
+
+class InsightsApiTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client, self.user = login_client("tips@example.com", "+77001230021")
+        self.other, self.other_user = login_client("tips2@example.com", "+77001230022")
+        today = timezone.localdate()
+        for amount, kind, category in ((100000, "income", "Жалақы"), (60000, "expense", "Тұрғын үй"), (35000, "expense", "Азық-түлік"), (3000, "expense", "Көлік")):
+            Transaction.objects.create(user=self.user, merchant="x", category=category, amount=amount, type=kind, tx_date=today, created_at=timezone.now())
+        Transaction.objects.create(user=self.other_user, merchant="x", category="Көлік", amount=999999, type="expense", tx_date=today, created_at=timezone.now())
+
+    def test_requires_login_and_a_valid_period(self):
+        self.assertEqual(Client().get("/api/insights?months=3").status_code, 401)
+        self.assertEqual(self.client.get("/api/insights?months=5").status_code, 400)
+
+    def test_tips_are_saved_once_with_period_and_creation_time(self):
+        first = self.client.get("/api/insights?months=1").json()
+        codes = [item["ruleCode"] for item in first["items"]]
+        self.assertIn("category_share", codes)  # 60 000 of 98 000 = 61 %
+        self.assertIn("low_savings", codes)     # 2 000 left of 100 000
+        share = next(item for item in first["items"] if item["ruleCode"] == "category_share")
+        self.assertIn("«Тұрғын үй»", share["message"])
+        self.assertTrue(share["createdAt"] and share["periodStart"] <= share["periodEnd"])
+        second = self.client.get("/api/insights?months=1").json()
+        self.assertEqual(Insight.objects.filter(user=self.user).count(), len(codes))
+        self.assertEqual([item["createdAt"] for item in second["items"]], [item["createdAt"] for item in first["items"]])
+
+    def test_tips_use_only_the_owners_data(self):
+        self.client.get("/api/insights?months=1")
+        self.assertEqual(Insight.objects.filter(user=self.other_user).count(), 0)
+        other_tips = self.other.get("/api/insights?months=1").json()["items"]
+        self.assertTrue(all("Тұрғын" not in item["message"] for item in other_tips))
+        self.assertEqual(Insight.objects.filter(user=self.user).exclude(user=self.user).count(), 0)

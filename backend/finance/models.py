@@ -112,3 +112,41 @@ class Budget(models.Model):
 
     def __str__(self):
         return f"{self.category} — {self.monthly_limit} ₸"
+
+
+class CancellationRequest(models.Model):
+    """Internal record that the user wants to stop a subscription. It does not stop any real payment."""
+    STATUSES = (("requested", "Сұрау тіркелді"), ("completed", "Провайдерде тоқтатылды"), ("withdrawn", "Қайтарылды"))
+    user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE, verbose_name="Қолданушы")
+    subscription = models.ForeignKey(Subscription, db_column="subscription_id", on_delete=models.CASCADE, verbose_name="Жазылым")
+    status = models.CharField("Күйі", max_length=10, choices=STATUSES, default="requested")
+    created_at = models.DateTimeField("Жасалған уақыты")
+    updated_at = models.DateTimeField("Жаңартылған уақыты", auto_now=True)
+
+    class Meta:
+        db_table = "cancellation_requests"
+        verbose_name = "тоқтату сұрауы"
+        verbose_name_plural = "Тоқтату сұраулары"
+
+    def __str__(self):
+        return f"{self.subscription} — {self.get_status_display()}"
+
+
+class Insight(models.Model):
+    """A rule-based recommendation, stored with the period and the figures it was computed from."""
+    user = models.ForeignKey(Account, db_column="user_id", on_delete=models.CASCADE, verbose_name="Қолданушы")
+    period_start = models.DateField("Кезең басы")
+    period_end = models.DateField("Кезең соңы")
+    rule_code = models.CharField("Ереже коды", max_length=30)
+    message = models.CharField("Ұсыныс", max_length=400)
+    basis = models.CharField("Негіз", max_length=400)
+    created_at = models.DateTimeField("Жасалған уақыты")
+
+    class Meta:
+        db_table = "ai_insights"
+        verbose_name = "ұсыныс"
+        verbose_name_plural = "Ұсыныстар"
+        constraints = [models.UniqueConstraint(fields=["user", "rule_code", "period_start", "period_end"], name="unique_insight_user_rule_period")]
+
+    def __str__(self):
+        return self.message
