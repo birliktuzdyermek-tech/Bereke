@@ -12,7 +12,19 @@ const GRADIENTS = [
   "linear-gradient(135deg,#3A4A6B,#566A93)",
   "linear-gradient(135deg,#17706B,#1F8A84)",
 ];
-const gradientFor = (card: Card) => GRADIENTS[card.id % GRADIENTS.length];
+// Recognisable colours for popular banks, matched on the name the user typed; other names fall back to the generic palette.
+const BANKS: [RegExp, string][] = [
+  [/kaspi|каспи/i, "linear-gradient(135deg,#C4241A,#F0483C)"],
+  [/halyk|халык|қазақстан халық|народн/i, "linear-gradient(135deg,#0A7A3D,#25A559)"],
+  [/jusan|жусан|жүсан/i, "linear-gradient(135deg,#E8590C,#FF9A3C)"],
+  [/forte|форте/i, "linear-gradient(135deg,#7A1D4E,#C23A86)"],
+  [/freedom|фридом/i, "linear-gradient(135deg,#0B3D2E,#1E8A5E)"],
+  [/bcc|центркредит|center/i, "linear-gradient(135deg,#1B3FA0,#3F6FE0)"],
+  [/sber|сбер/i, "linear-gradient(135deg,#0E8F3A,#53C25B)"],
+  [/alfa|альфа/i, "linear-gradient(135deg,#B3141B,#EF3B3B)"],
+  [/bereke|береке/i, "linear-gradient(135deg,#1E6B4A,#2C8A62)"],
+];
+const gradientFor = (card: Card) => BANKS.find(([pattern]) => pattern.test(card.bankName))?.[1] ?? GRADIENTS[card.id % GRADIENTS.length];
 const initials = (name: string) => name.trim().slice(0, 1).toUpperCase();
 
 export function CardsView({ cards, transactions, onAdd, onToggle, busy = false }: { cards: Card[]; transactions: Tx[]; onAdd: () => void; onToggle?: (card: Card) => void; busy?: boolean }) {
